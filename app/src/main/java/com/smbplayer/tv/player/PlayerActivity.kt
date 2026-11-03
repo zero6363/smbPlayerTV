@@ -2,7 +2,6 @@ package com.smbplayer.tv.player
 
 import android.content.Context
 import android.content.Intent
-import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -299,27 +298,19 @@ class PlayerActivity : AppCompatActivity() {
             }
 
             KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                // 控制条显示且焦点在按钮上：交给焦点系统在按钮间移动
-                if (binding.topBar.visibility == View.VISIBLE && controlsHasFocus()) {
-                    return super.onKeyDown(keyCode, event)
-                }
+                // 遥控器自带音量键，左右键专职控制进度（不再用于移动按钮焦点）
                 accumulateSeek(keyCode)
                 return true
             }
 
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
-                if (binding.topBar.visibility == View.VISIBLE) {
-                    // 控制条显示时分两种情况：
-                    // 焦点还在画面上 → 上下键把焦点送进控制条（进入按钮操作模式）；
-                    // 焦点已在控制条内 → 交给焦点系统在按钮间移动
-                    if (!controlsHasFocus()) {
-                        binding.btnPlayPause.requestFocus()
-                        return true
-                    }
-                    return super.onKeyDown(keyCode, event)
+                // 上下键：呼出控制条，并在按钮之间切换焦点（音量交给遥控器实体键）
+                if (binding.topBar.visibility != View.VISIBLE) {
+                    showControls()
+                    binding.btnPlayPause.requestFocus()
+                    return true
                 }
-                // 隐藏时调节音量（连发跟随系统重复节奏）
-                adjustVolume(if (keyCode == KeyEvent.KEYCODE_DPAD_UP) 1 else -1)
+                moveControlFocus(forward = keyCode == KeyEvent.KEYCODE_DPAD_DOWN)
                 return true
             }
 
@@ -429,21 +420,36 @@ class PlayerActivity : AppCompatActivity() {
 
     // ------------------------------------------------------------------ 音量控制
 
-    private val audioManager by lazy {
-        getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    /**
+     * 在控制条按钮之间切换焦点（播放页上下键）。
+     *
+     * 底栏按钮是横向排列的，几何焦点搜索在电视上方向语义不好用，
+     * 这里按「顶栏按钮 → 底栏按钮」的视觉顺序手动循环；
+     * 焦点还不在控制条里时，从播放/暂停按钮开始。
+     */
+    private fun moveControlFocus(forward: Boolean): Boolean {
+        val controls = mutableListOf<View>()
+        collectFocusables(binding.topBar, controls)
+        collectFocusables(binding.bottomBar, controls)
+        if (controls.isEmpty()) return false
+        val current = currentFocus
+        val index = controls.indexOfFirst { it === current }
+        if (index < 0) return binding.btnPlayPause.requestFocus()
+        val next = if (forward) {
+            (index + 1) % controls.size
+        } else {
+            (index - 1 + controls.size) % controls.size
+        }
+        return controls[next].requestFocus()
     }
 
-    /**
-     * 上下方向键调音量：直接走系统媒体音量步进，FLAG_SHOW_UI 让系统显示音量条 OSD，
-     * 与遥控器音量键行为一致（连发跟随系统按键重复节奏）。
-     */
-    private fun adjustVolume(direction: Int) {
-        val am = audioManager ?: return
-        am.adjustStreamVolume(
-            AudioManager.STREAM_MUSIC,
-            if (direction > 0) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER,
-            AudioManager.FLAG_SHOW_UI,
-        )
+    private fun collectFocusables(root: View, out: MutableList<View>) {
+        if (root.visibility != View.VISIBLE) return
+        if (root is ViewGroup) {
+            for (i in 0 until root.childCount) collectFocusables(root.getChildAt(i), out)
+        } else if (root.isFocusable && root.isEnabled) {
+            out.add(root)
+        }
     }
 
     // ------------------------------------------------------------------ 退出确认

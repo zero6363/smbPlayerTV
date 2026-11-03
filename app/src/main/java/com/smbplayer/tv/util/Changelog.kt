@@ -17,6 +17,15 @@ object Changelog {
 
     val releases: List<ChangelogEntry> = listOf(
         ChangelogEntry(
+            version = "1.3-tv",
+            date = "2026-11-03",
+            lines = listOf(
+                "播放页键位调整：左右键专职控制进度，上下键弹出控制条并在按钮之间切换焦点",
+                "音量改用遥控器自带的音量键，播放页不再占用上下键",
+                "进度条不再参与焦点，避免切换按钮时停在进度条上",
+            ),
+        ),
+        ChangelogEntry(
             version = "1.2-tv",
             date = "2026-11-03",
             lines = listOf(
