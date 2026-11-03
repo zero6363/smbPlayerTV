@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 服务器为空时的提示条目：按钮可聚焦，遥控器能直接添加服务器 -->
+<!-- 服务器为空时的提示条目（不可聚焦）：添加入口统一放在列表末尾的操作条目 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -8,8 +8,8 @@
     android:orientation="vertical"
     android:paddingStart="24dp"
     android:paddingEnd="24dp"
-    android:paddingTop="40dp"
-    android:paddingBottom="24dp">
+    android:paddingTop="32dp"
+    android:paddingBottom="12dp">
 
     <ImageView
         android:layout_width="56dp"
@@ -27,15 +27,6 @@
         android:gravity="center"
         android:text="@string/servers_empty"
         android:textColor="@color/on_surface_variant"
-        android:textSize="15sp" />
-
-    <Button
-        android:id="@+id/btn_add_server"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="20dp"
-        android:minWidth="160dp"
-        android:text="@string/action_add_server"
         android:textSize="15sp" />
 
 </LinearLayout>

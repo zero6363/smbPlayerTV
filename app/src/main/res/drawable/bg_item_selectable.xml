@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 多选列表条目：activated=勾选态，focused=遥控器聚焦态，两者可叠加 -->
+<!-- 多选列表条目：focused=遥控器聚焦态（优先，远距离可辨），activated=勾选态 -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#334F7CF5" />
+            <corners android:radius="10dp" />
+            <stroke android:width="3dp" android:color="@color/primary" />
+        </shape>
+    </item>
     <item android:state_activated="true">
         <shape android:shape="rectangle">
             <solid android:color="#334F7CF5" />
@@ -10,15 +17,8 @@
     </item>
     <item android:state_pressed="true">
         <shape android:shape="rectangle">
-            <solid android:color="#4D4F7CF5" />
+            <solid android:color="#664F7CF5" />
             <corners android:radius="10dp" />
-        </shape>
-    </item>
-    <item android:state_focused="true">
-        <shape android:shape="rectangle">
-            <solid android:color="#264F7CF5" />
-            <corners android:radius="10dp" />
-            <stroke android:width="2dp" android:color="@color/primary" />
         </shape>
     </item>
     <item>

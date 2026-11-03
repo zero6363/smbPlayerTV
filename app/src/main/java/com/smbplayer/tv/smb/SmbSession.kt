@@ -204,12 +204,31 @@ class SmbSession(private val server: SmbServer) : Closeable {
     /** 列出 [path] 下的目录项（不含 . 和 ..），目录在前。阻塞。 */
     fun list(shareName: String, path: String): List<SmbEntry> = withRetry(shareName) { sh ->
         val share = sh ?: throw IOException("未连接到共享「$shareName」")
-        share.list(path)
+        val entries = share.list(path)
             .asSequence()
             .filter { info -> info.fileName != "." && info.fileName != ".." }
-            .map { info -> info.toEntry() }
+            .map { info ->
+                val entry = info.toEntry()
+                // 有些服务器（老 Samba / 路由器 USB 共享 / 个别 NAS）枚举目录时
+                // fileAttributes 返回 0，会把文件夹误判成文件（图标、点击行为都不对）。
+                // 这类条目单独补查一次基础信息，确认真实类型。
+                if (info.fileAttributes != 0L) entry else resolveDirectoryFlag(share, path, entry)
+            }
             .toList()
-            .sortedWith(ENTRY_ORDER)
+        entries.sortedWith(ENTRY_ORDER)
+    }
+
+    /** attributes 缺失的条目补查一次，确认到底是文件还是文件夹；失败按原判定 */
+    private fun resolveDirectoryFlag(share: DiskShare, parent: String, entry: SmbEntry): SmbEntry {
+        return try {
+            val info = share.getFileInformation(
+                joinPath(parent, entry.name),
+                FileBasicInformation::class.java,
+            )
+            entry.copy(isDirectory = (info.fileAttributes and FILE_ATTRIBUTE_DIRECTORY) != 0L)
+        } catch (t: Throwable) {
+            entry
+        }
     }
 
     /**

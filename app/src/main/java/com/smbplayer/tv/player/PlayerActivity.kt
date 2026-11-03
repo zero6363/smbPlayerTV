@@ -9,6 +9,7 @@ import android.os.Looper
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.SeekBar
 import androidx.annotation.OptIn
@@ -200,14 +201,21 @@ class PlayerActivity : AppCompatActivity() {
         setupPlayer()
         setupControls()
 
-        // 返回键：控制条显示时先收起；要真正退出时二次确认，防遥控器误触
+        // 返回键：控制条显示时先收起；退出播放需连按两次（不弹窗，遥控器误触也不会退出）
         onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (binding.topBar.visibility == View.VISIBLE) {
                     hideControls()
-                } else {
-                    confirmExit()
+                    return
                 }
+                if (exitConfirmPending) {
+                    exitConfirmPending = false
+                    finish()
+                    return
+                }
+                exitConfirmPending = true
+                showHint(getString(R.string.exit_twice_hint))
+                mainHandler.postDelayed(exitConfirmReset, EXIT_CONFIRM_WINDOW_MS)
             }
         })
 
@@ -280,18 +288,12 @@ class PlayerActivity : AppCompatActivity() {
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         when (keyCode) {
-            // 确认键：控制条隐藏时也直接播放/暂停；控制条显示且焦点在按钮上时
-            // 走默认点击逻辑（不拦截），焦点不在按钮上才切换播放状态
+            // 确认键：只切换播放/暂停，不呼出控制条（控制条用菜单键召唤），
+            // 避免把焦点带进按钮区导致左右键与快进/快退冲突
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
                 if (event?.repeatCount == 0) {
-                    if (binding.topBar.visibility != View.VISIBLE) {
-                        showControls(focusPlayPause = true)
-                        togglePlayPause()
-                    } else if (!controlsHasFocus()) {
-                        togglePlayPause()
-                    } else {
-                        return super.onKeyDown(keyCode, event)
-                    }
+                    if (controlsHasFocus()) return super.onKeyDown(keyCode, event)
+                    togglePlayPause()
                 }
                 return true
             }
@@ -306,8 +308,14 @@ class PlayerActivity : AppCompatActivity() {
             }
 
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
-                // 控制条显示时：上下键在顶栏/底栏之间移动焦点，交给默认逻辑
                 if (binding.topBar.visibility == View.VISIBLE) {
+                    // 控制条显示时分两种情况：
+                    // 焦点还在画面上 → 上下键把焦点送进控制条（进入按钮操作模式）；
+                    // 焦点已在控制条内 → 交给焦点系统在按钮间移动
+                    if (!controlsHasFocus()) {
+                        binding.btnPlayPause.requestFocus()
+                        return true
+                    }
                     return super.onKeyDown(keyCode, event)
                 }
                 // 隐藏时调节音量（连发跟随系统重复节奏）
@@ -375,12 +383,13 @@ class PlayerActivity : AppCompatActivity() {
         val delta = if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) SEEK_STEP_MS else -SEEK_STEP_MS
         val now = android.os.SystemClock.elapsedRealtime()
         if (pendingSeekKeyCode != keyCode) {
-            // 新一次按压：以当前位置为基准重新开始累计
+            // 新一次按压：以当前位置为基准重新开始累计。
+            // 刻意不呼出控制条——左右键只负责快进/快退，控制条出现会把焦点
+            // 带进按钮区，按键就和按钮移动打架了
             pendingSeekKeyCode = keyCode
             pendingSeekOffsetMs = 0L
             pendingSeekBaseMs = p.currentPosition
             pendingSeekLastStepMs = now
-            showControls()
         } else {
             // 按住连发：按固定节奏节流
             if (now - pendingSeekLastStepMs < SEEK_REPEAT_INTERVAL_MS) return
@@ -440,27 +449,11 @@ class PlayerActivity : AppCompatActivity() {
     // ------------------------------------------------------------------ 退出确认
 
     /**
-     * 退出前二次确认：遥控器返回键容易误触。弹框时先暂停（避免还在出声），
-     * 取消 / 点框外则恢复刚才的播放状态。
+     * 退出前的第二次返回确认窗口：「再按一次返回退出」提示后，
+     * 超过该时长未再按返回则自动取消确认状态。
      */
-    private fun confirmExit() {
-        val wasPlaying = player?.isPlaying == true
-        if (wasPlaying) {
-            player?.pause()
-            saveCurrentProgress(force = true)
-        }
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.exit_confirm_title)
-            .setMessage(R.string.exit_confirm_message)
-            .setPositiveButton(R.string.exit_confirm_yes) { _, _ -> finish() }
-            .setNegativeButton(R.string.exit_confirm_no) { _, _ ->
-                if (wasPlaying) player?.play()
-            }
-            .setOnCancelListener {
-                if (wasPlaying) player?.play()
-            }
-            .show()
-    }
+    private var exitConfirmPending = false
+    private val exitConfirmReset = Runnable { exitConfirmPending = false }
 
     // ------------------------------------------------------------------ 删除当前视频
 
@@ -968,6 +961,22 @@ class PlayerActivity : AppCompatActivity() {
         setBottomMargin(binding.tvSubtitleOverlay, 40)
         setBottomMargin(binding.tvHint, 72)
         mainHandler.removeCallbacks(hideControlsRunnable)
+        // 焦点从控制条收回画面：否则按钮已隐藏、焦点仍留在按钮上，
+        // 左右键会被焦点系统吃掉，表现为「按左右键不快进」
+        val focused = currentFocus
+        if (focused != null && (isInside(binding.topBar, focused) || isInside(binding.bottomBar, focused))) {
+            binding.root.requestFocus()
+        }
+    }
+
+    /** view 是否在 parent 内部（ViewGroup.isAncestorOf 不是公开 API） */
+    private fun isInside(parent: ViewGroup, child: View?): Boolean {
+        var v: View? = child
+        while (v != null) {
+            if (v === parent) return true
+            v = v.parent as? View
+        }
+        return false
     }
 
     /** 滑动位移基准：优先用控件实际高度，未布局完成时按 100dp 兜底 */
@@ -1034,6 +1043,9 @@ class PlayerActivity : AppCompatActivity() {
 
         /** 按住方向键时的步进间隔：每 200ms 步进一步（约 1 秒拖 50 秒），不跟系统重复速率 */
         private const val SEEK_REPEAT_INTERVAL_MS = 200L
+
+        /** 连按两次返回退出的确认窗口：超时后第一次返回作废 */
+        private const val EXIT_CONFIRM_WINDOW_MS = 3_000L
 
         /** 同名字幕整体读进内存的大小上限（超过就按无字幕播放，避免异常大文件） */
         private const val MAX_SUBTITLE_BYTES = 8L * 1024 * 1024

@@ -6,12 +6,10 @@ import androidx.recyclerview.widget.RecyclerView
 import com.smbplayer.tv.databinding.ItemEmptyServersBinding
 
 /**
- * 服务器为空时的提示条目：提示文案 + 可聚焦的「添加服务器」按钮，
- * 遥控器在空状态下也能直接添加。
+ * 服务器为空时的提示条目（不可聚焦）。
+ * 添加服务器的可聚焦入口在列表末尾的 [ActionAdapter] 里。
  */
-class EmptyServersAdapter(
-    private val onAdd: () -> Unit,
-) : RecyclerView.Adapter<EmptyServersAdapter.Holder>() {
+class EmptyServersAdapter : RecyclerView.Adapter<EmptyServersAdapter.Holder>() {
 
     var visible: Boolean = false
         set(value) {
@@ -29,9 +27,7 @@ class EmptyServersAdapter(
         return Holder(binding)
     }
 
-    override fun onBindViewHolder(holder: Holder, position: Int) = with(holder.binding) {
-        btnAddServer.setOnClickListener { onAdd() }
-    }
+    override fun onBindViewHolder(holder: Holder, position: Int) = Unit
 
     class Holder(val binding: ItemEmptyServersBinding) :
         RecyclerView.ViewHolder(binding.root)

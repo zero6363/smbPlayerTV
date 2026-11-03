@@ -48,6 +48,8 @@ class ServerAdapter(
                 onLongClick(server)
                 true
             }
+            // 「进入」箭头同样触发打开（触屏/鼠标可用；遥控器聚焦整行后按确认键）
+            ivEnter.setOnClickListener { onClick(server) }
             btnEdit.setOnClickListener { onEdit(server) }
             btnDelete.setOnClickListener { onDelete(server) }
         }

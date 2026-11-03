@@ -64,6 +64,9 @@ class BrowseActivity : AppCompatActivity() {
     private val folderScroll = HashMap<String, ScrollPoint>()
     private var pendingRestore: PendingRestore? = null
 
+    /** 进入新目录后是否需要把焦点强制落到第一项 */
+    private var pendingFocusFirst = false
+
     /** smbj 没有共享枚举接口，扫描时逐个试连这些常见名字 */
     private val candidateShares = listOf(
         // 通用
@@ -259,6 +262,8 @@ class BrowseActivity : AppCompatActivity() {
             val position = entries.indexOfFirst { it.name == entry.name }
             folderScroll[currentPath] = ScrollPoint(position, entry.name, view.top)
             currentPath = joinPath(currentPath, entry.name)
+            // 进入新目录后焦点落到第一项（TV 上不然遥控器没落点）
+            pendingFocusFirst = true
             loadDirectory()
             return
         }
@@ -421,6 +426,7 @@ class BrowseActivity : AppCompatActivity() {
                 logInfo("目录加载完成: ${list.size} 项")
                 updateHeader(list)
                 applyPendingRestore(list)
+                focusEntryIfNeeded()
             } catch (e: CancellationException) {
                 throw e // 用户离开页面：正常取消，静默结束
             } catch (e: Exception) {
@@ -449,7 +455,9 @@ class BrowseActivity : AppCompatActivity() {
     private fun updateHeader(list: List<SmbEntry>) {
         val prefix = if (currentPath.isEmpty()) "/" else "/$currentPath/"
         binding.tvPath.text = "$shareName$prefix"
-        binding.tvCount.text = "${list.size} 项"
+        // 分开统计文件夹/文件：目录数为 0 说明服务端没返回目录条目（不是界面隐藏）
+        val dirCount = list.count { it.isDirectory }
+        binding.tvCount.text = getString(R.string.browse_count, dirCount, list.size - dirCount)
         binding.emptyView.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
         binding.toolbar.menu.findItem(R.id.action_play_all)?.isVisible = videoNames().isNotEmpty()
         binding.toolbar.menu.findItem(R.id.action_view_images)?.isVisible = imageNames().isNotEmpty()
@@ -471,6 +479,32 @@ class BrowseActivity : AppCompatActivity() {
         val index = (if (byName >= 0) byName else point.position).coerceIn(0, list.size - 1)
         layoutManager.scrollToPositionWithOffset(index, point.offset)
         logInfo("列表恢复位置: ${list[index].name} (序号 $index, 偏移 ${point.offset}px)")
+    }
+
+    /**
+     * TV 焦点落位：进入新目录（或首次加载）后把焦点放到第一个条目，并把列表滚到顶部。
+     * 没有焦点时遥控器方向键没有任何响应；列表停在中间还会让人以为「没有文件夹」。
+     */
+    private fun focusEntryIfNeeded() {
+        val force = pendingFocusFirst
+        pendingFocusFirst = false
+        if (force) binding.recycler.scrollToPosition(0)
+        binding.recycler.post { tryFocusEntry(4, force) }
+    }
+
+    private fun tryFocusEntry(attemptsLeft: Int, force: Boolean) {
+        if (isFinishing) return
+        if (!force && binding.recycler.findFocus() != null) return
+        for (i in 0 until binding.recycler.childCount) {
+            val child = binding.recycler.getChildAt(i)
+            if (child.isFocusable && child.visibility == View.VISIBLE) {
+                child.requestFocus()
+                return
+            }
+        }
+        if (attemptsLeft > 0) {
+            binding.recycler.postDelayed({ tryFocusEntry(attemptsLeft - 1, force) }, FOCUS_RETRY_DELAY_MS)
+        }
     }
 
     private fun showError(e: Exception) {
@@ -874,6 +908,9 @@ class BrowseActivity : AppCompatActivity() {
         /** 重建时保存当前浏览位置（夜间模式切换等） */
         private const val STATE_SHARE = "state_share"
         private const val STATE_PATH = "state_path"
+
+        /** 初始焦点请求的重试间距（列表可能尚未完成布局） */
+        private const val FOCUS_RETRY_DELAY_MS = 120L
 
         fun intent(
             context: Context,

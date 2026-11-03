@@ -37,6 +37,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var favoriteAdapter: FavoriteAdapter
     private lateinit var historyAdapter: HistoryAdapter
     private lateinit var emptyServers: EmptyServersAdapter
+    private lateinit var actionAdapter: ActionAdapter
 
     private val historySection = SectionAdapter(R.string.history_section_title)
     private val favoriteSection = SectionAdapter(R.string.favorite_section_title)
@@ -65,32 +66,30 @@ class MainActivity : AppCompatActivity() {
             onClick = { openHistory(it) },
             onLongClick = { confirmDeleteHistory(it) },
         )
-        emptyServers = EmptyServersAdapter(onAdd = { showEditDialog(null) })
+        emptyServers = EmptyServersAdapter()
+        actionAdapter = ActionAdapter(
+            listOf(
+                ActionAdapter.Action(R.drawable.ic_add, R.string.action_add_server) {
+                    showEditDialog(null)
+                },
+                ActionAdapter.Action(R.drawable.ic_settings, R.string.settings_title) {
+                    startActivity(SettingsActivity.intent(this))
+                },
+            )
+        )
 
-        // TV：最近播放 / 收藏路径 / 服务器 拼进同一个列表，D-pad 焦点一条链贯通
+        // TV：最近播放 / 收藏路径 / 服务器 / 操作 拼进同一个列表，
+        // D-pad 焦点只在列表内循环，不会跑到工具栏按钮上打转
         binding.recyclerMain.layoutManager = LinearLayoutManager(this)
         binding.recyclerMain.adapter = ConcatAdapter(
             historySection, historyAdapter,
             favoriteSection, favoriteAdapter,
             serverSection, adapter, emptyServers,
+            actionAdapter,
         )
 
-        // 工具栏：添加服务器（遥控器直达）+ 设置；副标题显示版本号
+        // 工具栏只做标题展示（不放可聚焦按钮，避免焦点环）
         binding.toolbar.subtitle = "v${appVersion()}"
-        binding.toolbar.inflateMenu(R.menu.menu_main)
-        binding.toolbar.setOnMenuItemClickListener { item ->
-            when (item.itemId) {
-                R.id.action_add_server -> {
-                    showEditDialog(null)
-                    true
-                }
-                R.id.action_settings -> {
-                    startActivity(SettingsActivity.intent(this))
-                    true
-                }
-                else -> false
-            }
-        }
 
         refresh()
     }
@@ -104,6 +103,15 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         refresh()
+    }
+
+    /**
+     * 窗口拿到输入焦点后再请求一次列表焦点：
+     * onCreate 阶段窗口还没焦点，这时 requestFocus 不生效，用户看到的就是「没有选中项」。
+     */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) focusFirstItem()
     }
 
     override fun onPause() {
@@ -126,35 +134,20 @@ class MainActivity : AppCompatActivity() {
     /**
      * TV 初始焦点：列表加载后把焦点落到条目上。
      * 没有焦点时遥控器方向键不会有任何响应，用户会觉得「选不中」。
-     * 优先恢复到离开主页时聚焦的位置，其次落到第一个可聚焦条目。
+     * 列表可能还没完成布局（childCount 为 0），带几次重试直到拿到焦点。
      */
     private fun focusFirstItem() {
         if (binding.recyclerMain.findFocus() != null) return
-        binding.recyclerMain.post {
-            if (isFinishing) return@post
-            if (binding.recyclerMain.childCount > 0) {
-                requestFocusIfNone()
-            } else {
-                // 首次进入：post 早于 RecyclerView 第一次布局，等布局完成再聚焦
-                binding.recyclerMain.addOnLayoutChangeListener(
-                    object : View.OnLayoutChangeListener {
-                        override fun onLayoutChange(
-                            v: View, left: Int, top: Int, right: Int, bottom: Int,
-                            oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int,
-                        ) {
-                            v.removeOnLayoutChangeListener(this)
-                            if (!isFinishing) requestFocusIfNone()
-                        }
-                    }
-                )
-            }
-        }
+        binding.recyclerMain.post { tryFocus(4) }
     }
 
-    private fun requestFocusIfNone() {
+    private fun tryFocus(attemptsLeft: Int) {
         if (isFinishing || binding.recyclerMain.findFocus() != null) return
         if (restoreLastFocus()) return
-        focusFirstChild()
+        if (focusFirstChild()) return
+        if (attemptsLeft > 0) {
+            binding.recyclerMain.postDelayed({ tryFocus(attemptsLeft - 1) }, FOCUS_RETRY_DELAY_MS)
+        }
     }
 
     private fun restoreLastFocus(): Boolean {
@@ -170,14 +163,14 @@ class MainActivity : AppCompatActivity() {
         return false
     }
 
-    private fun focusFirstChild() {
+    private fun focusFirstChild(): Boolean {
         for (i in 0 until binding.recyclerMain.childCount) {
             val child = binding.recyclerMain.getChildAt(i)
             if (child.isFocusable && child.visibility == View.VISIBLE) {
-                child.requestFocus()
-                return
+                return child.requestFocus()
             }
         }
+        return false
     }
 
     private fun refreshFavorites() {
@@ -403,6 +396,9 @@ class MainActivity : AppCompatActivity() {
     companion object {
         /** 主页「最近播放」展示条数 */
         private const val HISTORY_LIMIT = 10
+
+        /** 初始焦点请求的重试间距（列表可能尚未完成布局） */
+        private const val FOCUS_RETRY_DELAY_MS = 120L
 
         fun intent(context: Context): Intent = Intent(context, MainActivity::class.java)
     }
