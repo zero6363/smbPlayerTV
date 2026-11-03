@@ -92,9 +92,15 @@
 
     <!-- 遥控器操作 -->
     <string name="tv_help_title">遥控器操作</string>
-    <string name="tv_help_message">确认键：播放 / 暂停\n左右键：快退 / 快进 10 秒\n上下键或菜单键：显示控制条\n返回键：隐藏控制条 / 退出</string>
+    <string name="tv_help_message">确认键：播放 / 暂停\n左右键：快退 / 快进 10 秒\n上下键：音量增减\n菜单键：显示 / 隐藏控制条\n返回键：隐藏控制条 / 退出（需二次确认）</string>
     <string name="tv_hint_seek_preview">快进预览：%1$s（松开确认键生效）</string>
     <string name="tv_hint_rew_preview">快退预览：%1$s（松开确认键生效）</string>
+
+    <!-- 退出确认 -->
+    <string name="exit_confirm_title">退出播放</string>
+    <string name="exit_confirm_message">确定退出播放吗？播放进度已自动保存。</string>
+    <string name="exit_confirm_yes">退出</string>
+    <string name="exit_confirm_no">继续播放</string>
 
     <!-- 图片查看页 -->
     <string name="image_viewer_title">图片</string>

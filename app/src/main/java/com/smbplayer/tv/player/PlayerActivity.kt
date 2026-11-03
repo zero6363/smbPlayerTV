@@ -2,6 +2,7 @@ package com.smbplayer.tv.player
 
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -54,10 +55,11 @@ import java.io.IOException
  * 播放页（TV 版）：播放 [directory] 目录下的所有视频，遥控器全程操作。
  *
  * 键位：
- * - 确认键：播放 / 暂停（控制条隐藏时同样生效）
+ * - 确认键：播放 / 暂停（并呼出控制条）
  * - 左右方向键：快退 / 快进 10 秒（按住连发累计、实时预览落点，松开才真正 seek）
- * - 上下方向键 / 菜单键：呼出控制条；控制条显示时方向键在按钮间移动焦点
- * - 返回键：先收控制条，再退出播放页
+ * - 上下方向键：音量增减（系统音量条 OSD）；控制条显示时改为移动焦点
+ * - 菜单键：呼出 / 收起控制条
+ * - 返回键：先收控制条，退出前二次确认（进度已自动保存）
  * - 媒体键（播放/暂停/快进/快退/上一集/下一集）直接支持
  *
  * 支持删除当前视频（删除后自动跳到下一个）、上一个/下一个、播放列表、自动加载同名字幕。
@@ -195,13 +197,13 @@ class PlayerActivity : AppCompatActivity() {
         setupPlayer()
         setupControls()
 
-        // 返回键：控制条显示时先收起，再次按返回才退出播放页
+        // 返回键：控制条显示时先收起；要真正退出时二次确认，防遥控器误触
         onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (binding.topBar.visibility == View.VISIBLE) {
                     hideControls()
                 } else {
-                    finish()
+                    confirmExit()
                 }
             }
         })
@@ -305,8 +307,8 @@ class PlayerActivity : AppCompatActivity() {
                 if (binding.topBar.visibility == View.VISIBLE) {
                     return super.onKeyDown(keyCode, event)
                 }
-                // 隐藏时呼出控制条
-                if (event?.repeatCount == 0) showControls(focusPlayPause = true)
+                // 隐藏时调节音量（连发跟随系统重复节奏）
+                adjustVolume(if (keyCode == KeyEvent.KEYCODE_DPAD_UP) 1 else -1)
                 return true
             }
 
@@ -400,6 +402,50 @@ class PlayerActivity : AppCompatActivity() {
     /** 焦点是否在控制条按钮上 */
     private fun controlsHasFocus(): Boolean =
         binding.topBar.findFocus() != null || binding.bottomBar.findFocus() != null
+
+    // ------------------------------------------------------------------ 音量控制
+
+    private val audioManager by lazy {
+        getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    }
+
+    /**
+     * 上下方向键调音量：直接走系统媒体音量步进，FLAG_SHOW_UI 让系统显示音量条 OSD，
+     * 与遥控器音量键行为一致（连发跟随系统按键重复节奏）。
+     */
+    private fun adjustVolume(direction: Int) {
+        val am = audioManager ?: return
+        am.adjustStreamVolume(
+            AudioManager.STREAM_MUSIC,
+            if (direction > 0) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER,
+            AudioManager.FLAG_SHOW_UI,
+        )
+    }
+
+    // ------------------------------------------------------------------ 退出确认
+
+    /**
+     * 退出前二次确认：遥控器返回键容易误触。弹框时先暂停（避免还在出声），
+     * 取消 / 点框外则恢复刚才的播放状态。
+     */
+    private fun confirmExit() {
+        val wasPlaying = player?.isPlaying == true
+        if (wasPlaying) {
+            player?.pause()
+            saveCurrentProgress(force = true)
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.exit_confirm_title)
+            .setMessage(R.string.exit_confirm_message)
+            .setPositiveButton(R.string.exit_confirm_yes) { _, _ -> finish() }
+            .setNegativeButton(R.string.exit_confirm_no) { _, _ ->
+                if (wasPlaying) player?.play()
+            }
+            .setOnCancelListener {
+                if (wasPlaying) player?.play()
+            }
+            .show()
+    }
 
     // ------------------------------------------------------------------ 删除当前视频
 
