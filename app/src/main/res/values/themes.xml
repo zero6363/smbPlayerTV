@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- DayNight：跟随系统夜间模式自动切换（浅色/深色见 values-night/colors.xml） -->
-    <style name="Theme.SmbPlayer" parent="Theme.Material3.DayNight.NoActionBar">
+    <!-- 锁定深色：TV 全程深色界面，对话框（播放列表/服务器编辑/确认框）也必须
+         深底浅字。不能用 DayNight——系统浅色模式会让对话框变浅底，而列表文字
+         用的是固定的深色主题色值，会浅字浅底看不清。 -->
+    <style name="Theme.SmbPlayer" parent="Theme.Material3.Dark.NoActionBar">
         <item name="colorPrimary">@color/primary</item>
         <item name="colorOnPrimary">@color/on_primary</item>
         <item name="colorSecondary">@color/secondary</item>

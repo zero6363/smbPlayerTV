@@ -127,6 +127,9 @@ class PlayerActivity : AppCompatActivity() {
     /** 预览基准位置：按下方向键那一刻的播放位置 */
     private var pendingSeekBaseMs = 0L
 
+    /** 上次步进时刻：按住期间按固定节奏步进，不跟系统按键重复速率（约 20 次/秒太快） */
+    private var pendingSeekLastStepMs = 0L
+
     private val mainHandler = Handler(Looper.getMainLooper())
 
     /** 居中提示自动隐藏 */
@@ -360,16 +363,28 @@ class PlayerActivity : AppCompatActivity() {
         return super.onKeyUp(keyCode, event)
     }
 
-    /** 按住方向键期间累计偏移并实时预览落点（不真正 seek） */
+    /**
+     * 按住方向键期间累计偏移并实时预览落点（不真正 seek）。
+     *
+     * 步进节奏：首次按下立即步进一步，之后每 [SEEK_REPEAT_INTERVAL_MS] 步进一步——
+     * 系统 key repeat 约 20 次/秒，直接跟随会一秒跳 200 秒，太快没法用；
+     * 200ms/10s 即按住 1 秒拖 50 秒，连续拖动顺畅又不至于失控。
+     */
     private fun accumulateSeek(keyCode: Int) {
         val p = player ?: return
         val delta = if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) SEEK_STEP_MS else -SEEK_STEP_MS
+        val now = android.os.SystemClock.elapsedRealtime()
         if (pendingSeekKeyCode != keyCode) {
             // 新一次按压：以当前位置为基准重新开始累计
             pendingSeekKeyCode = keyCode
             pendingSeekOffsetMs = 0L
             pendingSeekBaseMs = p.currentPosition
+            pendingSeekLastStepMs = now
             showControls()
+        } else {
+            // 按住连发：按固定节奏节流
+            if (now - pendingSeekLastStepMs < SEEK_REPEAT_INTERVAL_MS) return
+            pendingSeekLastStepMs = now
         }
         pendingSeekOffsetMs += delta
         val duration = p.duration
@@ -1016,6 +1031,9 @@ class PlayerActivity : AppCompatActivity() {
 
         /** 遥控器快进 / 快退步长（按住可连发，松开生效） */
         private const val SEEK_STEP_MS = 10_000L
+
+        /** 按住方向键时的步进间隔：每 200ms 步进一步（约 1 秒拖 50 秒），不跟系统重复速率 */
+        private const val SEEK_REPEAT_INTERVAL_MS = 200L
 
         /** 同名字幕整体读进内存的大小上限（超过就按无字幕播放，避免异常大文件） */
         private const val MAX_SUBTITLE_BYTES = 8L * 1024 * 1024
