@@ -104,7 +104,7 @@ class MainActivity : AppCompatActivity() {
         )
         // 宫格卡片之间的间距
         binding.recyclerMain.addItemDecoration(object : RecyclerView.ItemDecoration() {
-            private val gap = (6 * resources.displayMetrics.density).toInt()
+            private val gap = (5 * resources.displayMetrics.density).toInt()
 
             override fun getItemOffsets(
                 outRect: Rect, view: View, parent: RecyclerView, state: RecyclerView.State,
@@ -433,7 +433,7 @@ class MainActivity : AppCompatActivity() {
         private const val FOCUS_RETRY_DELAY_MS = 120L
 
         /** 主页宫格列数 */
-        private const val GRID_SPAN = 2
+        private const val GRID_SPAN = 3
 
         fun intent(context: Context): Intent = Intent(context, MainActivity::class.java)
     }

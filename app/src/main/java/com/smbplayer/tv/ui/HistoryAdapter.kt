@@ -50,6 +50,12 @@ class HistoryAdapter(
                 append(entry.shareName)
                 if (entry.directory.isNotEmpty()) append(" / ").append(entry.directory)
             }
+            if (progress.durationMs > 0L) {
+                tvDuration.visibility = View.VISIBLE
+                tvDuration.text = formatDuration(progress.durationMs)
+            } else {
+                tvDuration.visibility = View.GONE
+            }
             tvProgress.text = when {
                 progress.completed -> root.context.getString(R.string.watched_done)
                 progress.positionMs > 0L -> root.context.getString(

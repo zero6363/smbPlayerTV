@@ -17,6 +17,15 @@ object Changelog {
 
     val releases: List<ChangelogEntry> = listOf(
         ChangelogEntry(
+            version = "1.4-tv",
+            date = "2026-11-03",
+            lines = listOf(
+                "主页宫格改为 3 列，卡片改为正方形（高度等于宽度），最近播放 / 收藏路径 / 服务器统一为方形卡片",
+                "卡片封面图标放大，历史卡片右下角新增影片时长角标",
+                "服务器卡片的「>」进入标识移到封面右上角",
+            ),
+        ),
+        ChangelogEntry(
             version = "1.3-tv",
             date = "2026-11-03",
             lines = listOf(
