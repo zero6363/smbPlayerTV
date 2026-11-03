@@ -6,7 +6,9 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.ConcatAdapter
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.smbplayer.tv.R
 import com.smbplayer.tv.data.FavoritePath
@@ -34,6 +36,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var adapter: ServerAdapter
     private lateinit var favoriteAdapter: FavoriteAdapter
     private lateinit var historyAdapter: HistoryAdapter
+    private lateinit var emptyServers: EmptyServersAdapter
+
+    private val historySection = SectionAdapter(R.string.history_section_title)
+    private val favoriteSection = SectionAdapter(R.string.favorite_section_title)
+    private val serverSection = SectionAdapter(R.string.server_section_title)
+
+    /** 上次离开主页时聚焦的条目位置（返回时恢复焦点） */
+    private var lastFocusPosition = RecyclerView.NO_POSITION
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,23 +56,24 @@ class MainActivity : AppCompatActivity() {
             onEdit = { showEditDialog(it) },
             onDelete = { confirmDelete(it) },
         )
-        binding.recycler.layoutManager = LinearLayoutManager(this)
-        binding.recycler.adapter = adapter
-
         favoriteAdapter = FavoriteAdapter(
             onClick = { openFavorite(it) },
             onLongClick = { confirmDeleteFavorite(it) },
             onRemove = { confirmDeleteFavorite(it) },
         )
-        binding.recyclerFavorite.layoutManager = LinearLayoutManager(this)
-        binding.recyclerFavorite.adapter = favoriteAdapter
-
         historyAdapter = HistoryAdapter(
             onClick = { openHistory(it) },
             onLongClick = { confirmDeleteHistory(it) },
         )
-        binding.recyclerHistory.layoutManager = LinearLayoutManager(this)
-        binding.recyclerHistory.adapter = historyAdapter
+        emptyServers = EmptyServersAdapter(onAdd = { showEditDialog(null) })
+
+        // TV：最近播放 / 收藏路径 / 服务器 拼进同一个列表，D-pad 焦点一条链贯通
+        binding.recyclerMain.layoutManager = LinearLayoutManager(this)
+        binding.recyclerMain.adapter = ConcatAdapter(
+            historySection, historyAdapter,
+            favoriteSection, favoriteAdapter,
+            serverSection, adapter, emptyServers,
+        )
 
         // 工具栏：添加服务器（遥控器直达）+ 设置；副标题显示版本号
         binding.toolbar.subtitle = "v${appVersion()}"
@@ -95,27 +106,90 @@ class MainActivity : AppCompatActivity() {
         refresh()
     }
 
+    override fun onPause() {
+        super.onPause()
+        val focused = binding.recyclerMain.findFocus() ?: return
+        val pos = binding.recyclerMain.getChildAdapterPosition(focused)
+        if (pos != RecyclerView.NO_POSITION) lastFocusPosition = pos
+    }
+
     private fun refresh() {
-        val list = ServerRepository.getAll()
-        adapter.submit(list)
-        binding.emptyView.visibility =
-            if (list.isEmpty()) View.VISIBLE else View.GONE
+        val servers = ServerRepository.getAll()
+        adapter.submit(servers)
+        emptyServers.visible = servers.isEmpty()
+
         refreshFavorites()
         refreshHistory()
+        focusFirstItem()
+    }
+
+    /**
+     * TV 初始焦点：列表加载后把焦点落到条目上。
+     * 没有焦点时遥控器方向键不会有任何响应，用户会觉得「选不中」。
+     * 优先恢复到离开主页时聚焦的位置，其次落到第一个可聚焦条目。
+     */
+    private fun focusFirstItem() {
+        if (binding.recyclerMain.findFocus() != null) return
+        binding.recyclerMain.post {
+            if (isFinishing) return@post
+            if (binding.recyclerMain.childCount > 0) {
+                requestFocusIfNone()
+            } else {
+                // 首次进入：post 早于 RecyclerView 第一次布局，等布局完成再聚焦
+                binding.recyclerMain.addOnLayoutChangeListener(
+                    object : View.OnLayoutChangeListener {
+                        override fun onLayoutChange(
+                            v: View, left: Int, top: Int, right: Int, bottom: Int,
+                            oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int,
+                        ) {
+                            v.removeOnLayoutChangeListener(this)
+                            if (!isFinishing) requestFocusIfNone()
+                        }
+                    }
+                )
+            }
+        }
+    }
+
+    private fun requestFocusIfNone() {
+        if (isFinishing || binding.recyclerMain.findFocus() != null) return
+        if (restoreLastFocus()) return
+        focusFirstChild()
+    }
+
+    private fun restoreLastFocus(): Boolean {
+        val target = lastFocusPosition
+        if (target == RecyclerView.NO_POSITION) return false
+        val lm = binding.recyclerMain.layoutManager as? LinearLayoutManager ?: return false
+        binding.recyclerMain.scrollToPosition(target)
+        val view = lm.findViewByPosition(target)
+        if (view != null && view.isFocusable && view.visibility == View.VISIBLE) {
+            view.requestFocus()
+            return true
+        }
+        return false
+    }
+
+    private fun focusFirstChild() {
+        for (i in 0 until binding.recyclerMain.childCount) {
+            val child = binding.recyclerMain.getChildAt(i)
+            if (child.isFocusable && child.visibility == View.VISIBLE) {
+                child.requestFocus()
+                return
+            }
+        }
     }
 
     private fun refreshFavorites() {
         val favorites = FavoriteRepository.getAll()
         favoriteAdapter.submit(favorites)
-        binding.favoriteSection.visibility =
-            if (favorites.isEmpty()) View.GONE else View.VISIBLE
+        favoriteSection.visible = favorites.isNotEmpty()
     }
 
     private fun refreshHistory() {
         val history = PlaybackProgressRepository.recent(HISTORY_LIMIT)
         historyAdapter.submit(history)
-        binding.historySection.visibility =
-            if (history.isEmpty()) View.GONE else View.VISIBLE
+        historySection.visible = history.isNotEmpty()
     }
 
     private fun openBrowse(server: SmbServer) {

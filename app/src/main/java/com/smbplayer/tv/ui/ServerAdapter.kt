@@ -16,6 +16,8 @@ class ServerAdapter(
     private val items = mutableListOf<SmbServer>()
 
     fun submit(list: List<SmbServer>) {
+        // TV：数据没变就不重建列表，避免返回主页时焦点被重置
+        if (items == list) return
         items.clear()
         items.addAll(list)
         notifyDataSetChanged()

@@ -16,6 +16,8 @@ class FavoriteAdapter(
     private val items = mutableListOf<FavoritePath>()
 
     fun submit(list: List<FavoritePath>) {
+        // TV：数据没变就不重建列表，避免返回主页时焦点被重置
+        if (items == list) return
         items.clear()
         items.addAll(list)
         notifyDataSetChanged()

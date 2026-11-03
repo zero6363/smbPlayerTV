@@ -26,6 +26,8 @@ class HistoryAdapter(
     private val timeFormat = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
 
     fun submit(list: List<HistoryEntry>) {
+        // TV：数据没变就不重建列表，避免返回主页时焦点被重置
+        if (items == list) return
         items.clear()
         items.addAll(list)
         notifyDataSetChanged()

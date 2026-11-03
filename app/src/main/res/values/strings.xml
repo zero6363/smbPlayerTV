@@ -3,7 +3,7 @@
     <string name="app_name">SMB 播放器 TV</string>
 
     <!-- 服务器列表 -->
-    <string name="servers_empty">还没有 SMB 服务器\n按遥控器「确认」键或菜单键添加</string>
+    <string name="servers_empty">还没有 SMB 服务器</string>
     <string name="action_add_server">添加服务器</string>
     <string name="action_edit">编辑</string>
     <string name="action_delete">删除</string>
@@ -135,6 +135,7 @@
 
     <!-- 最近播放 -->
     <string name="history_section_title">最近播放</string>
+    <string name="server_section_title">服务器</string>
     <string name="history_server_missing">服务器不存在或已被删除，无法续播</string>
     <string name="history_delete_title">删除播放记录</string>
     <string name="history_delete_message">从「最近播放」里移除「%1$s」吗？（不会删除视频文件）</string>
