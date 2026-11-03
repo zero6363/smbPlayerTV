@@ -104,7 +104,7 @@ class MainActivity : AppCompatActivity() {
         )
         // 宫格卡片之间的间距
         binding.recyclerMain.addItemDecoration(object : RecyclerView.ItemDecoration() {
-            private val gap = (5 * resources.displayMetrics.density).toInt()
+            private val gap = (4 * resources.displayMetrics.density).toInt()
 
             override fun getItemOffsets(
                 outRect: Rect, view: View, parent: RecyclerView, state: RecyclerView.State,
@@ -169,12 +169,22 @@ class MainActivity : AppCompatActivity() {
      * 列表可能还没完成布局（childCount 为 0），带几次重试直到拿到焦点。
      */
     private fun focusFirstItem() {
-        if (binding.recyclerMain.findFocus() != null) return
-        binding.recyclerMain.post { tryFocus(4) }
+        if (hasItemFocus()) return
+        binding.recyclerMain.post { tryFocus(6) }
+    }
+
+    /**
+     * 焦点是否已经落在某个条目上。
+     * 注意 RecyclerView 自身也可能拿到焦点，那种情况用户看到的是「什么都没选中」，
+     * 必须继续把焦点送到第一条。
+     */
+    private fun hasItemFocus(): Boolean {
+        val focused = binding.recyclerMain.findFocus() ?: return false
+        return focused !== binding.recyclerMain
     }
 
     private fun tryFocus(attemptsLeft: Int) {
-        if (isFinishing || binding.recyclerMain.findFocus() != null) return
+        if (isFinishing || hasItemFocus()) return
         if (restoreLastFocus()) return
         if (focusFirstChild()) return
         if (attemptsLeft > 0) {
@@ -427,13 +437,13 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         /** 主页「最近播放」展示条数 */
-        private const val HISTORY_LIMIT = 10
+        private const val HISTORY_LIMIT = 12
 
         /** 初始焦点请求的重试间距（列表可能尚未完成布局） */
         private const val FOCUS_RETRY_DELAY_MS = 120L
 
         /** 主页宫格列数 */
-        private const val GRID_SPAN = 3
+        private const val GRID_SPAN = 6
 
         fun intent(context: Context): Intent = Intent(context, MainActivity::class.java)
     }

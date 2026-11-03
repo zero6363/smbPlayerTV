@@ -95,7 +95,7 @@
 
     <!-- 遥控器操作 -->
     <string name="tv_help_title">遥控器操作</string>
-    <string name="tv_help_message">确认键：播放 / 暂停\n左右键：快退 / 快进 10 秒（专职控制进度）\n上下键：弹出控制条，在按钮之间切换焦点\n菜单键：显示 / 隐藏控制条\n音量请用遥控器自带的音量键\n返回键：先收起控制条；连按两次退出播放</string>
+    <string name="tv_help_message">确认键：播放 / 暂停\n左右键：单击快退 / 快进 10 秒，按住每步 30 秒（专职控制进度）\n上下键：弹出控制条，在按钮之间切换焦点\n菜单键：显示 / 隐藏控制条\n音量请用遥控器自带的音量键\n返回键：先收起控制条；连按两次退出播放</string>
     <string name="tv_hint_seek_preview">快进预览：%1$s（松开方向键生效）</string>
     <string name="tv_hint_rew_preview">快退预览：%1$s（松开方向键生效）</string>
 

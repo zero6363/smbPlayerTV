@@ -7,19 +7,21 @@
     android:fitsSystemWindows="true"
     android:orientation="vertical">
 
+    <!-- 顶栏用深灰而不是品牌蓝：蓝色只留给「遥控器焦点」，避免焦点框和顶栏糊在一起 -->
     <com.google.android.material.appbar.MaterialToolbar
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="@color/primary"
+        android:background="@color/surface"
         app:navigationContentDescription="@string/back"
         app:navigationIcon="@drawable/ic_chevron_left"
-        app:titleTextColor="@color/on_primary" />
+        app:navigationIconTint="@color/on_surface"
+        app:titleTextColor="@color/on_surface" />
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/primary_dark"
+        android:background="@color/background"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingStart="16dp"
@@ -32,7 +34,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:textColor="@color/on_primary"
+            android:textColor="@color/on_surface_variant"
             android:textSize="12sp" />
 
         <TextView
@@ -40,9 +42,14 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="8dp"
-            android:textColor="@color/on_primary"
+            android:textColor="@color/on_surface_variant"
             android:textSize="12sp" />
     </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/outline" />
 
     <FrameLayout
         android:layout_width="match_parent"
@@ -100,7 +107,7 @@
         android:id="@+id/selection_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/primary_dark"
+        android:background="@color/surface_high"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingStart="16dp"

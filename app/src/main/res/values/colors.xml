@@ -7,6 +7,7 @@
     <color name="secondary">#FF26A69A</color>
     <color name="background">#FF101114</color>
     <color name="surface">#FF1A1B1F</color>
+    <color name="surface_high">#FF24262C</color>
     <color name="on_surface">#FFE8EAED</color>
     <color name="on_surface_variant">#FFA6AAB3</color>
     <color name="outline">#FF33363D</color>

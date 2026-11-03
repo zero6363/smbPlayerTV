@@ -310,7 +310,7 @@ class PlayerActivity : AppCompatActivity() {
 
             KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
                 // 遥控器自带音量键，左右键专职控制进度（不再用于移动按钮焦点）
-                accumulateSeek(keyCode)
+                accumulateSeek(keyCode, event?.repeatCount ?: 0)
                 return true
             }
 
@@ -376,13 +376,16 @@ class PlayerActivity : AppCompatActivity() {
     /**
      * 按住方向键期间累计偏移并实时预览落点（不真正 seek）。
      *
-     * 步进节奏：首次按下立即步进一步，之后每 [SEEK_REPEAT_INTERVAL_MS] 步进一步——
-     * 系统 key repeat 约 20 次/秒，直接跟随会一秒跳 200 秒，太快没法用；
-     * 200ms/10s 即按住 1 秒拖 50 秒，连续拖动顺畅又不至于失控。
+     * 步长：单击（repeatCount == 0）走 [SEEK_STEP_MS]（10 秒），按住连发走
+     * [SEEK_HOLD_STEP_MS]（30 秒），长片快拖不用按上百次。
+     * 节奏：每 [SEEK_REPEAT_INTERVAL_MS] 走一步——系统 key repeat 约 20 次/秒，
+     * 直接跟随会一秒跳几百秒，太快没法用；250ms/30s 即按住 1 秒拖 120 秒。
      */
-    private fun accumulateSeek(keyCode: Int) {
+    private fun accumulateSeek(keyCode: Int, repeatCount: Int = 0) {
         val p = player ?: return
-        val delta = if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) SEEK_STEP_MS else -SEEK_STEP_MS
+        // 单击 = 10 秒；按住连发每一步放大到 30 秒，长片拖起来不至于要按上百次
+        val step = if (repeatCount > 0) SEEK_HOLD_STEP_MS else SEEK_STEP_MS
+        val delta = if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) step else -step
         val now = android.os.SystemClock.elapsedRealtime()
         if (pendingSeekKeyCode != keyCode) {
             // 新一次按压：以当前位置为基准重新开始累计。
@@ -1141,11 +1144,14 @@ class PlayerActivity : AppCompatActivity() {
         private const val CONTROL_HIDE_DELAY_MS = 4_000L
         private const val HINT_HIDE_DELAY_MS = 1_500L
 
-        /** 遥控器快进 / 快退步长（按住可连发，松开生效） */
+        /** 遥控器单击左右键的快退 / 快进步长 */
         private const val SEEK_STEP_MS = 10_000L
 
-        /** 按住方向键时的步进间隔：每 200ms 步进一步（约 1 秒拖 50 秒），不跟系统重复速率 */
-        private const val SEEK_REPEAT_INTERVAL_MS = 200L
+        /** 按住左右键连发时每一步的步长（幅度放大到 30 秒） */
+        private const val SEEK_HOLD_STEP_MS = 30_000L
+
+        /** 按住方向键时的步进间隔：每 250ms 走一步（按住 1 秒约 120 秒），不跟系统重复速率 */
+        private const val SEEK_REPEAT_INTERVAL_MS = 250L
 
         /** 连按两次返回退出的确认窗口：超时后第一次返回作废 */
         private const val EXIT_CONFIRM_WINDOW_MS = 3_000L

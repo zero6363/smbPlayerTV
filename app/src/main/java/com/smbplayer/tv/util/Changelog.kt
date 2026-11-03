@@ -17,6 +17,15 @@ object Changelog {
 
     val releases: List<ChangelogEntry> = listOf(
         ChangelogEntry(
+            version = "1.6-tv",
+            date = "2026-11-03",
+            lines = listOf(
+                "主页宫格改为 6 列，卡片缩小一半，一屏能看到更多内容；最近播放上限改为 12 条（正好两排）",
+                "顶栏配色改为深灰，蓝色只用来表示遥控器焦点，焦点框和顶栏不再混淆",
+                "播放页：单击左右键快进 10 秒，按住连发每一步 30 秒",
+            ),
+        ),
+        ChangelogEntry(
             version = "1.5-tv",
             date = "2026-11-03",
             lines = listOf(

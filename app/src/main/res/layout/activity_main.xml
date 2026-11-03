@@ -11,10 +11,10 @@
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:background="@color/primary"
-        app:subtitleTextColor="@color/on_primary"
+        android:background="@color/surface"
+        app:subtitleTextColor="@color/on_surface_variant"
         app:title="@string/app_name"
-        app:titleTextColor="@color/on_primary" />
+        app:titleTextColor="@color/on_surface" />
 
     <!--
       TV 单列表结构：最近播放 / 收藏路径 / 服务器 三个分区由 ConcatAdapter 拼接在
@@ -27,6 +27,7 @@
         android:layout_weight="1"
         android:clipToPadding="false"
         android:descendantFocusability="afterDescendants"
+        android:focusable="false"
         android:paddingTop="4dp"
         android:paddingBottom="16dp"
         android:scrollbars="vertical" />
