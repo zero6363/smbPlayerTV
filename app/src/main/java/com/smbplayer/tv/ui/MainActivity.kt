@@ -42,7 +42,7 @@ class MainActivity : AppCompatActivity() {
 
         adapter = ServerAdapter(
             onClick = { openBrowse(it) },
-            onLongClick = { showEditDialog(it) },
+            onLongClick = { showServerActions(it) },
             onEdit = { showEditDialog(it) },
             onDelete = { confirmDelete(it) },
         )
@@ -120,6 +120,29 @@ class MainActivity : AppCompatActivity() {
 
     private fun openBrowse(server: SmbServer) {
         startActivity(BrowseActivity.intent(this, server.id))
+    }
+
+    /**
+     * 长按服务器条目（TV 无触屏时「编辑 / 删除」的必要入口，
+     * 条目内的按钮已禁用遥控器聚焦，触屏仍可点）。
+     */
+    private fun showServerActions(server: SmbServer) {
+        val label = server.name.ifBlank { server.displayHost }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(label)
+            .setItems(
+                arrayOf(
+                    getString(R.string.action_edit),
+                    getString(R.string.action_delete),
+                )
+            ) { _, which ->
+                when (which) {
+                    0 -> showEditDialog(server)
+                    1 -> confirmDelete(server)
+                }
+            }
+            .setNegativeButton(R.string.server_cancel, null)
+            .show()
     }
 
     /** 点击「最近播放」：直接进播放页续播（文件不存在时由播放列表定位逻辑兜底） */

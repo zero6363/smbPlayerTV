@@ -6,6 +6,8 @@
     android:background="@drawable/bg_item_focused"
     android:gravity="center_vertical"
     android:orientation="horizontal"
+    android:focusable="true"
+    android:clickable="true"
     android:paddingStart="16dp"
     android:paddingEnd="8dp"
     android:paddingTop="8dp"
@@ -53,6 +55,7 @@
         android:layout_height="40dp"
         android:background="?attr/selectableItemBackgroundBorderless"
         android:contentDescription="@string/action_delete"
+        android:focusable="false"
         android:src="@drawable/ic_delete"
         app:tint="@color/on_surface_variant" />
 

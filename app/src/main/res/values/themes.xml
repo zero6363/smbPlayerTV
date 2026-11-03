@@ -25,6 +25,9 @@
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:background">@drawable/bg_item_focused</item>
+        <!-- TV 遥控器：条目整行可聚焦（内部按钮禁用聚焦，避免抢占 D-pad 焦点） -->
+        <item name="android:focusable">true</item>
+        <item name="android:clickable">true</item>
         <item name="android:paddingStart">16dp</item>
         <item name="android:paddingEnd">16dp</item>
         <item name="android:paddingTop">12dp</item>
