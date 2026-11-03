@@ -34,11 +34,12 @@ object SettingsRepository {
         prefs ?: throw IllegalStateException("SettingsRepository.init() 未调用")
 
     /**
-     * 后台播放：离开播放页（息屏 / 切到后台）时是否继续播放，默认 true。
-     * 关闭后，播放页 onStop 会暂停，避免离开时后台出声。
+     * 后台播放：离开播放页（息屏 / 切到后台）时是否继续播放，默认 false。
+     * TV 场景离开播放页基本就是退出了，默认关闭避免电视后台出声；
+     * 需要边播边干别的（如切到设置页查日志）可在设置页打开。
      */
     var backgroundPlay: Boolean
-        get() = store().getBoolean(KEY_BACKGROUND_PLAY, true)
+        get() = store().getBoolean(KEY_BACKGROUND_PLAY, false)
         set(value) {
             store().edit().putBoolean(KEY_BACKGROUND_PLAY, value).apply()
         }

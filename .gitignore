@@ -32,3 +32,7 @@ desktop.ini
 
 # 日志
 *.log
+
+# 测试媒体不入库
+testdata/*.mp4
+testdata/*.srt
