@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <!-- TV 没有 FAB：添加服务器放在工具栏上，遥控器直接可达 -->
+    <item
+        android:id="@+id/action_add_server"
+        android:icon="@drawable/ic_add"
+        android:title="@string/action_add_server"
+        app:showAsAction="always" />
+
+    <item
+        android:id="@+id/action_settings"
+        android:title="@string/settings_title"
+        app:showAsAction="never" />
+</menu>
