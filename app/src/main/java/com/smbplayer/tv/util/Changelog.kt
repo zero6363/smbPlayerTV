@@ -17,6 +17,15 @@ object Changelog {
 
     val releases: List<ChangelogEntry> = listOf(
         ChangelogEntry(
+            version = "1.5-tv",
+            date = "2026-11-03",
+            lines = listOf(
+                "播放容错：源文件个别帧损坏时自动跳过损坏片段继续播放，不再直接弹窗中断",
+                "同一处最多连续尝试 4 次；距片尾出错按播放完毕处理，自动顺延下一集",
+                "开启解码器失败回退（硬解失败自动换软解），减少整片打不开的情况",
+            ),
+        ),
+        ChangelogEntry(
             version = "1.4-tv",
             date = "2026-11-03",
             lines = listOf(

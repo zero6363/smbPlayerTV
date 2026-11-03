@@ -81,6 +81,8 @@
     <string name="player_error_action_next">播放下一个</string>
     <string name="player_error_action_close">关闭</string>
     <string name="player_error_action_retry">重试</string>
+    <string name="player_error_skipping">画面数据异常，已跳过损坏片段继续播放</string>
+    <string name="player_error_after_retry">已尝试跳过损坏片段，但仍无法继续：%1$s</string>
     <string name="player_no_more">已经是最后一个视频</string>
     <string name="player_no_video">该文件夹没有可播放的视频</string>
     <string name="player_deleted_last">视频已删除，没有更多视频了</string>

@@ -19,6 +19,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.extractor.DefaultExtractorsFactory
@@ -86,6 +87,14 @@ class PlayerActivity : AppCompatActivity() {
 
     /** 上次写入播放记录的位置，用于节流（每 5 秒最多写一次） */
     private var lastSavedProgressMs = -1L
+
+    // ---- 播放错误自救：源文件个别帧损坏时跳过损坏片段继续播 ----
+
+    /** 上次出错时的播放位置（毫秒），Long.MIN_VALUE 表示当前视频还没出过错 */
+    private var errorRecoverPosition = Long.MIN_VALUE
+
+    /** 同一位置附近连续自救的次数，播放顺利推进后归零 */
+    private var errorRecoverCount = 0
 
     /**
      * 本次播放中用户是否主动调整过位置（快进快退 / 拖进度条）。
@@ -185,6 +194,8 @@ class PlayerActivity : AppCompatActivity() {
 
         override fun onPlayerError(error: PlaybackException) {
             binding.progress.visibility = View.GONE
+            // 源文件个别帧损坏：先跳过损坏片段继续播，实在救不回来才弹窗
+            if (recoverFromError(error)) return
             showPlaybackError(error)
         }
     }
@@ -588,6 +599,9 @@ class PlayerActivity : AppCompatActivity() {
 
         index = newIndex
         val name = videos[newIndex]
+        // 换视频：错误自救的计数归零（上一部的好坏跟这一部无关）
+        errorRecoverPosition = Long.MIN_VALUE
+        errorRecoverCount = 0
         // 没指定起点时接着上次的播放记录：看完的视频从头重播
         val resumePosition = startPositionMs
             ?: PlaybackProgressRepository.get(server.id, shareName, pathOf(name))?.resumePositionMs
@@ -765,7 +779,10 @@ class PlayerActivity : AppCompatActivity() {
     // ------------------------------------------------------------------ 播放控制
 
     private fun setupPlayer() {
-        val p = ExoPlayer.Builder(this).build()
+        // 开启解码器回退：硬解初始化/解码失败时自动换下一个解码器（通常是软解），
+        // 电视盒子的硬解对个别损坏帧特别敏感，这一层能挡掉相当一部分「打不开」
+        val renderersFactory = DefaultRenderersFactory(this).setEnableDecoderFallback(true)
+        val p = ExoPlayer.Builder(this, renderersFactory).build()
         p.addListener(playerListener)
         binding.playerView.player = p
         player = p
@@ -899,18 +916,86 @@ class PlayerActivity : AppCompatActivity() {
 
     // ------------------------------------------------------------------ 错误提示
 
+    /**
+     * 播放错误自救：源文件有个别损坏的帧 / 片段时，跳过这一小段后重新准备播放，
+     * 而不是直接弹窗让用户关掉。
+     *
+     * 判定规则：
+     * - 解码器初始化失败、格式不支持、文件不存在这类「换位置也没用」的错误不重试；
+     * - 同一位置附近连续失败超过 [ERROR_RECOVER_MAX] 次不重试（说明是整段/整个文件坏了）；
+     * - 已经播到接近片尾时报错，按「播放完毕」处理，直接进入下一集。
+     *
+     * @return true 表示已经接管处理（不再弹窗）
+     */
+    private fun recoverFromError(error: PlaybackException): Boolean {
+        if (!isAlive()) return false
+        val p = player ?: return false
+        if (!isRecoverable(error)) return false
+
+        val position = p.currentPosition.coerceAtLeast(0L)
+        val duration = p.duration
+
+        // 位置几乎没动 → 认为是同一处的连续失败
+        val sameSpot = errorRecoverPosition != Long.MIN_VALUE &&
+            position - errorRecoverPosition in 0L..ERROR_SAME_POSITION_MS
+        errorRecoverCount = if (sameSpot) errorRecoverCount + 1 else 1
+        errorRecoverPosition = position
+
+        if (errorRecoverCount > ERROR_RECOVER_MAX) {
+            logError("同一位置连续 ${errorRecoverCount} 次播放失败，不再跳过（${error.errorCodeName}）", error)
+            return false
+        }
+
+        val target = position + ERROR_SKIP_MS
+        if (duration > 0L && target >= duration - END_TOLERANCE_MS) {
+            // 片尾数据坏了，当已看完处理，顺延到下一集
+            logError("片尾出现播放错误（${error.errorCodeName}），按播放完毕处理", error)
+            markCurrentCompleted()
+            playNext(fromUser = false)
+            return true
+        }
+
+        logError(
+            "播放出错（${error.errorCodeName}）：跳过 ${ERROR_SKIP_MS}ms 后重试，第 $errorRecoverCount 次",
+            error,
+        )
+        showHint(getString(R.string.player_error_skipping))
+        p.seekTo(target)
+        p.prepare()
+        p.playWhenReady = true
+        return true
+    }
+
+    /** 这类错误换个位置重试有意义吗（解码器/格式/权限类错误换位置也没用） */
+    private fun isRecoverable(error: PlaybackException): Boolean = when (error.errorCode) {
+        PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+        PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
+        PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED,
+        PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
+        PlaybackException.ERROR_CODE_IO_NO_PERMISSION,
+        -> false
+
+        else -> true
+    }
+
     private fun showPlaybackError(error: PlaybackException) {
         // 播放器错误回调可能在页面销毁后陆续到达：不活着就不弹，避免 BadTokenException
         if (!isAlive()) return
         val message = error.message ?: error.errorCodeName
+        // 已经自动跳过若干次还救不回来：文案说明「试过了」，用户才知道不是没处理
+        val text = if (errorRecoverCount > 0) {
+            getString(R.string.player_error_after_retry, message)
+        } else {
+            getString(R.string.player_error, message)
+        }
         logError("播放失败", error)
-        binding.tvError.text = getString(R.string.player_error, message)
+        binding.tvError.text = text
         binding.tvError.visibility = View.VISIBLE
 
         val hasNext = index + 1 < videos.size
         MaterialAlertDialogBuilder(this)
             .setTitle(R.string.player_error_title)
-            .setMessage(getString(R.string.player_error, message))
+            .setMessage(text)
             .setCancelable(false)
             .setPositiveButton(
                 if (hasNext) R.string.player_error_action_next else R.string.player_error_action_retry
@@ -944,6 +1029,13 @@ class PlayerActivity : AppCompatActivity() {
         if (userSeeking) return
         val position = p.currentPosition
         val duration = p.duration
+        // 已经播过出错点很远：说明自救成功，计数归零，后面的坏帧可以重新计数
+        if (errorRecoverCount > 0 && errorRecoverPosition != Long.MIN_VALUE &&
+            position > errorRecoverPosition + ERROR_SAME_POSITION_MS * 2
+        ) {
+            errorRecoverCount = 0
+            errorRecoverPosition = Long.MIN_VALUE
+        }
         binding.tvPosition.text = formatDuration(position)
         binding.tvDuration.text = if (duration > 0) formatDuration(duration) else "--:--"
         if (duration > 0 && !binding.seekProgress.isPressed) {
@@ -1066,6 +1158,18 @@ class PlayerActivity : AppCompatActivity() {
 
         /** 播放记录落盘的最小位置变化（避免每 500ms 都写 SharedPreferences） */
         private const val PROGRESS_SAVE_INTERVAL_MS = 5_000L
+
+        /** 播放出错后跳过多少毫秒再重试（损坏的帧/片段通常只有几百毫秒） */
+        private const val ERROR_SKIP_MS = 1_500L
+
+        /** 同一处最多连续自救几次，超过就认为整段坏了，交给用户决定 */
+        private const val ERROR_RECOVER_MAX = 4
+
+        /** 位置差在这个范围内视为「同一处出错」 */
+        private const val ERROR_SAME_POSITION_MS = 3_000L
+
+        /** 距离片尾不到这个长度时出错，直接按播放完毕处理 */
+        private const val END_TOLERANCE_MS = 1_000L
 
         fun intent(
             context: Context,
