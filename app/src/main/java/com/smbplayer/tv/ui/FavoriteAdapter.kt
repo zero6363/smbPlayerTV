@@ -10,7 +10,6 @@ import com.smbplayer.tv.databinding.ItemFavoriteBinding
 class FavoriteAdapter(
     private val onClick: (FavoritePath) -> Unit,
     private val onLongClick: (FavoritePath) -> Unit,
-    private val onRemove: (FavoritePath) -> Unit,
 ) : RecyclerView.Adapter<FavoriteAdapter.Holder>() {
 
     private val items = mutableListOf<FavoritePath>()
@@ -46,7 +45,6 @@ class FavoriteAdapter(
                 onLongClick(item)
                 true
             }
-            btnRemove.setOnClickListener { onRemove(item) }
         }
     }
 }

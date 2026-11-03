@@ -17,6 +17,16 @@ object Changelog {
 
     val releases: List<ChangelogEntry> = listOf(
         ChangelogEntry(
+            version = "1.2-tv",
+            date = "2026-11-03",
+            lines = listOf(
+                "主页改为宫格视图（2 列）：最近播放、收藏路径、服务器都用卡片排列，分区标题和底部操作条目占满整行",
+                "服务器卡片去掉编辑/删除小图标（长按确认键的菜单里已有），保留「>」进入标识",
+                "播放页播放列表支持遥控器选择：打开时焦点直接落在当前播放的视频上",
+                "浏览页按遥控器菜单/设置键，焦点跳到顶部工具栏按钮",
+            ),
+        ),
+        ChangelogEntry(
             version = "1.1-tv",
             date = "2026-11-03",
             lines = listOf(

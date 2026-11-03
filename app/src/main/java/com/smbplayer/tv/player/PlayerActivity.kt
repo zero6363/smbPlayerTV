@@ -880,9 +880,14 @@ class PlayerActivity : AppCompatActivity() {
             .setNegativeButton(R.string.server_cancel, null)
             .create()
             .also { it.show() }
-        // 打开时定位到正在播放的视频（show 之后列表才有尺寸，post 一下再滚）
+        // 打开时定位到正在播放的视频，并把焦点落到该项（遥控器可直接上下选择）
         b.recyclerPlaylist.post {
             if (index in videos.indices) layoutManager.scrollToPositionWithOffset(index, 0)
+            b.recyclerPlaylist.post {
+                val target = layoutManager.findViewByPosition(index)
+                    ?: layoutManager.findViewByPosition(0)
+                target?.requestFocus()
+            }
         }
     }
 

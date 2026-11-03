@@ -9,8 +9,6 @@ import com.smbplayer.tv.databinding.ItemServerBinding
 class ServerAdapter(
     private val onClick: (SmbServer) -> Unit,
     private val onLongClick: (SmbServer) -> Unit,
-    private val onEdit: (SmbServer) -> Unit,
-    private val onDelete: (SmbServer) -> Unit,
 ) : RecyclerView.Adapter<ServerAdapter.Holder>() {
 
     private val items = mutableListOf<SmbServer>()
@@ -50,8 +48,6 @@ class ServerAdapter(
             }
             // 「进入」箭头同样触发打开（触屏/鼠标可用；遥控器聚焦整行后按确认键）
             ivEnter.setOnClickListener { onClick(server) }
-            btnEdit.setOnClickListener { onEdit(server) }
-            btnDelete.setOnClickListener { onDelete(server) }
         }
     }
 }

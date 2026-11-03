@@ -3,8 +3,10 @@ package com.smbplayer.tv.ui
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewGroup
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -211,6 +213,34 @@ class BrowseActivity : AppCompatActivity() {
         super.onSaveInstanceState(outState)
         outState.putString(STATE_SHARE, shareName)
         outState.putString(STATE_PATH, currentPath)
+    }
+
+    /**
+     * 遥控器「菜单 / 设置」键：把焦点送到顶部工具栏按钮（刷新、播放全部、排序等），
+     * 不用一路按方向键往上找。
+     */
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_SETTINGS) {
+            val target = findFirstFocusable(binding.toolbar)
+            if (target != null) {
+                target.requestFocus()
+                return true
+            }
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    private fun findFirstFocusable(group: ViewGroup): View? {
+        for (i in 0 until group.childCount) {
+            val child = group.getChildAt(i)
+            if (child.visibility != View.VISIBLE) continue
+            if (child is ViewGroup) {
+                findFirstFocusable(child)?.let { return it }
+            } else if (child.isFocusable) {
+                return child
+            }
+        }
+        return null
     }
 
     // ------------------------------------------------------------------ 收藏路径

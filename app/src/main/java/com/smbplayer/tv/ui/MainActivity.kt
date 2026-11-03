@@ -2,11 +2,13 @@ package com.smbplayer.tv.ui
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Rect
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.ConcatAdapter
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -54,13 +56,10 @@ class MainActivity : AppCompatActivity() {
         adapter = ServerAdapter(
             onClick = { openBrowse(it) },
             onLongClick = { showServerActions(it) },
-            onEdit = { showEditDialog(it) },
-            onDelete = { confirmDelete(it) },
         )
         favoriteAdapter = FavoriteAdapter(
             onClick = { openFavorite(it) },
             onLongClick = { confirmDeleteFavorite(it) },
-            onRemove = { confirmDeleteFavorite(it) },
         )
         historyAdapter = HistoryAdapter(
             onClick = { openHistory(it) },
@@ -78,15 +77,41 @@ class MainActivity : AppCompatActivity() {
             )
         )
 
-        // TV：最近播放 / 收藏路径 / 服务器 / 操作 拼进同一个列表，
-        // D-pad 焦点只在列表内循环，不会跑到工具栏按钮上打转
-        binding.recyclerMain.layoutManager = LinearLayoutManager(this)
+        // TV：最近播放 / 收藏路径 / 服务器 / 操作 拼进同一个列表，条目按宫格排列
+        // （分区标题、空提示、底部操作条目占满整行，其余条目各占一格）
+        binding.recyclerMain.layoutManager = GridLayoutManager(this, GRID_SPAN).apply {
+            spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
+                override fun getSpanSize(position: Int): Int {
+                    val concat = binding.recyclerMain.adapter as? ConcatAdapter ?: return GRID_SPAN
+                    val wrapped = concat.getWrappedAdapterAndPosition(position).first
+                    return if (
+                        wrapped is HistoryAdapter ||
+                        wrapped is FavoriteAdapter ||
+                        wrapped is ServerAdapter
+                    ) {
+                        1
+                    } else {
+                        GRID_SPAN
+                    }
+                }
+            }
+        }
         binding.recyclerMain.adapter = ConcatAdapter(
             historySection, historyAdapter,
             favoriteSection, favoriteAdapter,
             serverSection, adapter, emptyServers,
             actionAdapter,
         )
+        // 宫格卡片之间的间距
+        binding.recyclerMain.addItemDecoration(object : RecyclerView.ItemDecoration() {
+            private val gap = (6 * resources.displayMetrics.density).toInt()
+
+            override fun getItemOffsets(
+                outRect: Rect, view: View, parent: RecyclerView, state: RecyclerView.State,
+            ) {
+                outRect.set(gap, gap, gap, gap)
+            }
+        })
 
         // 工具栏只做标题展示（不放可聚焦按钮，避免焦点环）
         binding.toolbar.subtitle = "v${appVersion()}"
@@ -117,7 +142,14 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         val focused = binding.recyclerMain.findFocus() ?: return
-        val pos = binding.recyclerMain.getChildAdapterPosition(focused)
+        // getChildAdapterPosition 只接受 RecyclerView 的直接子项，
+        // 焦点可能落在条目内部子 view 上，先往上找到直接子项（否则会 ClassCastException）
+        var child: View? = focused
+        while (child != null && child.parent !== binding.recyclerMain) {
+            child = child.parent as? View
+        }
+        if (child == null) return
+        val pos = binding.recyclerMain.getChildAdapterPosition(child)
         if (pos != RecyclerView.NO_POSITION) lastFocusPosition = pos
     }
 
@@ -399,6 +431,9 @@ class MainActivity : AppCompatActivity() {
 
         /** 初始焦点请求的重试间距（列表可能尚未完成布局） */
         private const val FOCUS_RETRY_DELAY_MS = 120L
+
+        /** 主页宫格列数 */
+        private const val GRID_SPAN = 2
 
         fun intent(context: Context): Intent = Intent(context, MainActivity::class.java)
     }
