@@ -15,6 +15,7 @@ object SettingsRepository {
     private const val KEY_NORMAL_SPEED = "normal_speed"
     private const val KEY_SORT_FIELD = "sort_field"
     private const val KEY_SORT_ASCENDING = "sort_ascending"
+    private const val KEY_SUBTITLE_SIZE = "subtitle_size"
 
     private val lock = Any()
 
@@ -68,5 +69,15 @@ object SettingsRepository {
         get() = store().getBoolean(KEY_SORT_ASCENDING, SortOptions.DEFAULT_ASCENDING)
         set(value) {
             store().edit().putBoolean(KEY_SORT_ASCENDING, value).apply()
+        }
+
+    /**
+     * 字幕字号档位：见 [SubtitleSizes]（0 小 / 1 中 / 2 大）。
+     * 播放页按这个档位把字号换算成「屏幕高度的百分比」，换台电视不用重调。
+     */
+    var subtitleSize: Int
+        get() = store().getInt(KEY_SUBTITLE_SIZE, SubtitleSizes.DEFAULT)
+        set(value) {
+            store().edit().putInt(KEY_SUBTITLE_SIZE, value).apply()
         }
 }

@@ -266,7 +266,9 @@
         android:textStyle="bold"
         android:visibility="gone" />
 
-    <!-- 字幕叠加层：播前解析好的字幕按 currentPosition 渲染，控制条显示时上移避让 -->
+    <!-- 字幕叠加层：播前解析好的字幕按 currentPosition 渲染，控制条显示时上移避让。
+         字号在 PlayerActivity#applySubtitleStyle 里按屏幕高度重算（这里只是兜底值），
+         TV 盒子 density 差异大，写死 sp 会小到看不清。 -->
     <TextView
         android:id="@+id/tv_subtitle_overlay"
         android:layout_width="match_parent"
@@ -283,13 +285,14 @@
         android:clickable="false"
         android:focusable="false"
         android:gravity="center"
-        android:maxLines="3"
+        android:lineSpacingMultiplier="1.2"
+        android:maxLines="4"
         android:paddingStart="14dp"
         android:paddingEnd="14dp"
         android:paddingTop="6dp"
         android:paddingBottom="6dp"
         android:textColor="@color/on_primary"
-        android:textSize="18sp"
+        android:textSize="28sp"
         android:visibility="gone" />
 
 </FrameLayout>

@@ -2,9 +2,11 @@ package com.smbplayer.tv.player
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.TypedValue
 import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
@@ -32,6 +34,7 @@ import com.smbplayer.tv.data.SettingsRepository
 import com.smbplayer.tv.data.SmbServer
 import com.smbplayer.tv.data.SpeedOptions
 import com.smbplayer.tv.data.SubtitleFormats
+import com.smbplayer.tv.data.SubtitleSizes
 import com.smbplayer.tv.data.VideoFormats
 import com.smbplayer.tv.databinding.ActivityPlayerBinding
 import com.smbplayer.tv.databinding.DialogPlaylistBinding
@@ -108,6 +111,9 @@ class PlayerActivity : AppCompatActivity() {
     /** 当前视频的同名字幕（播前解析成 cue 列表，由叠加层渲染） */
     private var subtitleCues: List<SubtitleCue> = emptyList()
 
+    /** 字幕字号档位（设置页可调，进播放页时读一次，改完设置重进播放页生效） */
+    private var subtitleSizeLevel = SettingsRepository.subtitleSize
+
     /** 字幕叠加层刷新（100ms 一帧，cue 切换更及时） */
     private val subtitleTickRunnable = object : Runnable {
         override fun run() {
@@ -148,6 +154,8 @@ class PlayerActivity : AppCompatActivity() {
     private fun showHint(text: String) {
         binding.tvHint.text = text
         binding.tvHint.visibility = View.VISIBLE
+        // 字幕可能正在显示：提示条要落在字幕上方，不能压在字幕上
+        setBottomMarginPx(binding.tvHint, hintBottomPx(binding.topBar.visibility == View.VISIBLE))
         mainHandler.removeCallbacks(hideHintRunnable)
         mainHandler.postDelayed(hideHintRunnable, HINT_HIDE_DELAY_MS)
     }
@@ -207,6 +215,7 @@ class PlayerActivity : AppCompatActivity() {
         logInfo("PlayerActivity onCreate")
         binding = ActivityPlayerBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        applySubtitleStyle()
 
         setupPlayer()
         setupControls()
@@ -1055,8 +1064,8 @@ class PlayerActivity : AppCompatActivity() {
     private fun showControls(focusPlayPause: Boolean = false) {
         animateBarIn(binding.topBar, -1)
         animateBarIn(binding.bottomBar, 1)
-        setBottomMargin(binding.tvSubtitleOverlay, 148)
-        setBottomMargin(binding.tvHint, 168)
+        setBottomMarginPx(binding.tvSubtitleOverlay, subtitleBottomPx(controlsVisible = true))
+        setBottomMarginPx(binding.tvHint, hintBottomPx(controlsVisible = true))
         if (focusPlayPause) binding.btnPlayPause.requestFocus()
         scheduleHideControls()
     }
@@ -1064,8 +1073,8 @@ class PlayerActivity : AppCompatActivity() {
     private fun hideControls() {
         animateBarOut(binding.topBar, -1)
         animateBarOut(binding.bottomBar, 1)
-        setBottomMargin(binding.tvSubtitleOverlay, 40)
-        setBottomMargin(binding.tvHint, 72)
+        setBottomMarginPx(binding.tvSubtitleOverlay, subtitleBottomPx(controlsVisible = false))
+        setBottomMarginPx(binding.tvHint, hintBottomPx(controlsVisible = false))
         mainHandler.removeCallbacks(hideControlsRunnable)
         // 焦点从控制条收回画面：否则按钮已隐藏、焦点仍留在按钮上，
         // 左右键会被焦点系统吃掉，表现为「按左右键不快进」
@@ -1115,10 +1124,47 @@ class PlayerActivity : AppCompatActivity() {
             }.start()
     }
 
-    /** 调整叠加层距底部的距离：控制条显示时避让，隐藏时贴近底部 */
-    private fun setBottomMargin(view: View, dp: Int) {
+    /**
+     * 字幕样式：字号按**屏幕高度的比例**算，不写死 sp。
+     *
+     * TV 盒子的 density 差异极大：同样 1080p 屏，density=1 时 1sp 只有 1px，
+     * 原来的 18sp 占屏高不到 2%，离电视两米基本看不清。改成按屏高比例后，
+     * 默认「中」档在 1080p 上约 52px（屏高 4.8%）、4K 上等比放大；
+     * 行距和描边阴影也跟着字号缩放，两行字幕不会粘在一起，亮画面也有轮廓。
+     */
+    private fun applySubtitleStyle() {
+        val overlay = binding.tvSubtitleOverlay
+        val px = subtitleTextPx()
+        overlay.setTextSize(TypedValue.COMPLEX_UNIT_PX, px)
+        overlay.setLineSpacing(px * 0.25f, 1f)
+        overlay.setShadowLayer(px * 0.16f, px * 0.04f, px * 0.06f, Color.BLACK)
+    }
+
+    /** 字幕字号（px）= 屏幕高度 × 档位比例 */
+    private fun subtitleTextPx(): Float =
+        resources.displayMetrics.heightPixels * SubtitleSizes.ratioOf(subtitleSizeLevel)
+
+    /** 字幕距底部：原有 dp 间距与屏高比例取大者（低 density 盒子上 dp 会偏小） */
+    private fun subtitleBottomPx(controlsVisible: Boolean): Int = maxOf(
+        dpPx(if (controlsVisible) 148 else 40),
+        (resources.displayMetrics.heightPixels *
+            if (controlsVisible) SUBTITLE_BOTTOM_SHOWN_RATIO else SUBTITLE_BOTTOM_HIDDEN_RATIO).toInt(),
+    )
+
+    /** 提示条距底部：字幕正在显示时抬到字幕上方，免得盖住字幕 */
+    private fun hintBottomPx(controlsVisible: Boolean): Int {
+        val base = dpPx(if (controlsVisible) 168 else 72)
+        val overlay = binding.tvSubtitleOverlay
+        if (overlay.visibility != View.VISIBLE) return base
+        val subtitleTop = subtitleBottomPx(controlsVisible) + overlay.height
+        return maxOf(base, subtitleTop + dpPx(8))
+    }
+
+    private fun dpPx(dp: Int): Int = (dp * resources.displayMetrics.density).toInt()
+
+    /** 调整叠加层距底部的距离（px）：控制条显示时避让，隐藏时贴近底部 */
+    private fun setBottomMarginPx(view: View, px: Int) {
         val params = view.layoutParams as? FrameLayout.LayoutParams ?: return
-        val px = (dp * resources.displayMetrics.density).toInt()
         if (params.bottomMargin != px) {
             params.bottomMargin = px
             view.layoutParams = params
@@ -1161,6 +1207,10 @@ class PlayerActivity : AppCompatActivity() {
 
         /** 字幕叠加层刷新间隔 */
         private const val SUBTITLE_TICK_MS = 100L
+
+        /** 字幕距屏幕底部的比例：控制条显示 / 隐藏时（与 dp 间距取较大值） */
+        private const val SUBTITLE_BOTTOM_SHOWN_RATIO = 0.155f
+        private const val SUBTITLE_BOTTOM_HIDDEN_RATIO = 0.055f
 
         /** 播放记录落盘的最小位置变化（避免每 500ms 都写 SharedPreferences） */
         private const val PROGRESS_SAVE_INTERVAL_MS = 5_000L

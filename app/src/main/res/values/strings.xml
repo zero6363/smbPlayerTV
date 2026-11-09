@@ -176,6 +176,13 @@
     <string name="settings_speed_value">%1$.2fx</string>
     <string name="settings_background_play">后台播放</string>
     <string name="settings_background_play_hint">关闭后，离开播放页或息屏时会暂停；开启则继续在后台播放</string>
+    <string name="settings_subtitle_size">字幕大小</string>
+    <string name="settings_subtitle_size_hint">字号按屏幕高度自适应，离电视远看不清就调大一档</string>
+    <string-array name="subtitle_size_labels">
+        <item>小</item>
+        <item>中</item>
+        <item>大</item>
+    </string-array>
     <string name="settings_tv_help">遥控器操作说明</string>
 
     <!-- 播放页常驻倍速（会继承到下一集） -->

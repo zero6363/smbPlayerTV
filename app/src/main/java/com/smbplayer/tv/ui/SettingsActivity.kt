@@ -13,7 +13,7 @@ import com.smbplayer.tv.util.Changelog
 import com.smbplayer.tv.util.toast
 
 /**
- * 设置页（TV 版）：后台播放开关、遥控器操作说明、更新日志。
+ * 设置页（TV 版）：后台播放开关、字幕大小、遥控器操作说明、更新日志。
  */
 class SettingsActivity : AppCompatActivity() {
 
@@ -37,11 +37,43 @@ class SettingsActivity : AppCompatActivity() {
             SettingsRepository.backgroundPlay = isChecked
         }
 
+        // 字幕大小
+        updateSubtitleSizeValue()
+        binding.rowSubtitleSize.setOnClickListener { showSubtitleSizePicker() }
+
         // 遥控器操作说明
         binding.rowTvHelp.setOnClickListener { showTvHelp() }
 
         // 更新日志
         binding.rowChangelog.setOnClickListener { showChangelog() }
+    }
+
+    /** 字幕档位标签（顺序与 data/SubtitleSizes 的档位下标一致） */
+    private val subtitleLabels: Array<String>
+        get() = resources.getStringArray(R.array.subtitle_size_labels)
+
+    private fun updateSubtitleSizeValue() {
+        val level = SettingsRepository.subtitleSize.coerceIn(0, subtitleLabels.lastIndex)
+        binding.tvSubtitleSizeValue.text = subtitleLabels[level]
+    }
+
+    /**
+     * 字幕大小：小 / 中 / 大三档单选。
+     *
+     * 选中即保存并关闭——TV 上用遥控器少按一次「确定」更顺手；
+     * 播放页按档位把字号换算成屏幕高度的百分比，换台电视不用重调。
+     */
+    private fun showSubtitleSizePicker() {
+        val labels = subtitleLabels
+        val current = SettingsRepository.subtitleSize.coerceIn(0, labels.lastIndex)
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.settings_subtitle_size)
+            .setSingleChoiceItems(labels, current) { dialog, which ->
+                SettingsRepository.subtitleSize = which
+                updateSubtitleSizeValue()
+                dialog.dismiss()
+            }
+            .show()
     }
 
     /** 遥控器键位速查（与播放页实际键位一致） */

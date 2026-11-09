@@ -24,8 +24,8 @@ android {
         // TV 盒子普遍是老系统：最低支持 Android 5.0（API 21）
         minSdk = 21
         targetSdk = 35
-        versionCode = 7
-        versionName = "1.6-tv"
+        versionCode = 8
+        versionName = "1.7-tv"
     }
 
     signingConfigs {

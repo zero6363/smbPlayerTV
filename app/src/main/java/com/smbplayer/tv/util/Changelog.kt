@@ -17,6 +17,16 @@ object Changelog {
 
     val releases: List<ChangelogEntry> = listOf(
         ChangelogEntry(
+            version = "1.7-tv",
+            date = "2026-11-09",
+            lines = listOf(
+                "字幕字号按屏幕高度自适应，约为原来固定 18sp 的 1.4~2.9 倍（取决于盒子 density），离电视远也看得清",
+                "设置页新增「字幕大小」：小 / 中 / 大三档，遥控器选中即生效，换电视不用重调",
+                "字幕行距与描边阴影跟随字号缩放，两行字幕不粘连；最多显示行数 3 → 4 行",
+                "操作提示条（如「已加载字幕」）在字幕显示时自动上移，不再压住字幕",
+            ),
+        ),
+        ChangelogEntry(
             version = "1.6-tv",
             date = "2026-11-03",
             lines = listOf(
