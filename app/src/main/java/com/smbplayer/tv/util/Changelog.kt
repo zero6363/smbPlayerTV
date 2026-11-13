@@ -17,6 +17,16 @@ object Changelog {
 
     val releases: List<ChangelogEntry> = listOf(
         ChangelogEntry(
+            version = "1.10-tv",
+            date = "2026-11-13",
+            lines = listOf(
+                "遥控器方向键按界面状态分流：弹窗里交给弹窗选择，控制条显示时左右键在按钮间切焦点，控制条隐藏时才快进 / 快退",
+                "画面模式左右键：短按 10 秒，按住 400ms 后连续快跳（每 250ms 30 秒），松开才真正跳转，避免网络流反复 seek",
+                "长按连跳改由计时器驱动，不发按键重复事件的遥控器也能连续快进",
+                "媒体键快进 / 快退不再弹出控制条；呼出控制条时提示当前按键模式",
+            ),
+        ),
+        ChangelogEntry(
             version = "1.9-tv",
             date = "2026-11-13",
             lines = listOf(
