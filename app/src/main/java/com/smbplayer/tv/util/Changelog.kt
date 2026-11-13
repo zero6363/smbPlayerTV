@@ -17,6 +17,15 @@ object Changelog {
 
     val releases: List<ChangelogEntry> = listOf(
         ChangelogEntry(
+            version = "1.11-tv",
+            date = "2026-11-13",
+            lines = listOf(
+                "「发现新版本」提示框 30 秒无操作自动收起，电视开着没人按也不会一直占屏抢焦点",
+                "任意按键重新计时；点「立即更新」或退出页面自动取消计时，不留后台定时器",
+                "弹窗内提示自动关闭时间，错过后仍可在设置页手动检查更新",
+            ),
+        ),
+        ChangelogEntry(
             version = "1.10-tv",
             date = "2026-11-13",
             lines = listOf(
