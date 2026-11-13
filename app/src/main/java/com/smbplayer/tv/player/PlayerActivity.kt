@@ -58,13 +58,16 @@ import java.io.IOException
 /**
  * 播放页（TV 版）：播放 [directory] 目录下的所有视频，遥控器全程操作。
  *
- * 键位：
- * - 确认键：播放 / 暂停（并呼出控制条）
- * - 左右方向键：快退 / 快进 10 秒（按住连发累计、实时预览落点，松开才真正 seek）
- * - 上下方向键：音量增减（系统音量条 OSD）；控制条显示时改为移动焦点
- * - 菜单键：呼出 / 收起控制条
+ * 键位（方向键语义由「上下文 + 按压时长」决定，参照 VLC / Compose TV 播放器的通行做法）：
+ * - 弹窗（播放列表 / 倍速 / 删除 / 错误）显示时：方向键、确认键全部让位给弹窗焦点系统
+ * - 控制条显示（按钮焦点模式）：左右键在按钮间移动焦点，上下键循环切换按钮，确认键点击按钮
+ * - 控制条隐藏（画面模式）：左右键快退 / 快进，短按 10 秒；按住 ≥400ms 进入连跳
+ *   （每 250ms 30 秒），实时预览落点，松开才真正 seek
+ * - 确认键（画面模式）：播放 / 暂停；上下键 / 菜单键：呼出控制条并进入按钮焦点模式
+ * - 菜单键：呼出 / 收起控制条（显式切换模式）
  * - 返回键：先收控制条，退出前二次确认（进度已自动保存）
- * - 媒体键（播放/暂停/快进/快退/上一集/下一集）直接支持
+ * - 媒体键（播放/暂停/快进/快退/上一集/下一集）直接支持；快进/快退媒体键不呼出控制条，
+ *   免得刚快进完左右键的语义就变了
  *
  * 支持删除当前视频（删除后自动跳到下一个）、上一个/下一个、播放列表、自动加载同名字幕。
  */
@@ -130,8 +133,11 @@ class PlayerActivity : AppCompatActivity() {
     private var normalSpeed = SettingsRepository.normalSpeed
 
     // ---------- 遥控器快进快退（预览式 seek）----------
-    // 按住方向键连发时只累计偏移量并实时预览落点，松开按键才真正 seek。
-    // 网络流 seek 是一次昂贵的范围请求，不能每按一下就连发一次。
+    // 只在「控制条隐藏」的画面模式生效：按下先登记，短按松手提交 10 秒，
+    // 按住 ≥ SEEK_LONG_PRESS_MS 才进入连跳。全程只累计偏移并实时预览落点，
+    // 松开按键才真正 seek——网络流 seek 是一次昂贵的范围请求，不能每按一下就发一次。
+
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     /** 本次按住期间累计的 seek 偏移量（毫秒，负值为快退） */
     private var pendingSeekOffsetMs = 0L
@@ -139,13 +145,38 @@ class PlayerActivity : AppCompatActivity() {
     /** 正在按住的 seek 方向键（DPAD_LEFT / DPAD_RIGHT），无按键按住时为 null */
     private var pendingSeekKeyCode: Int? = null
 
+    /** 当前 seek 方向：+1 快进 / -1 快退 */
+    private var pendingSeekDirection = 0
+
     /** 预览基准位置：按下方向键那一刻的播放位置 */
     private var pendingSeekBaseMs = 0L
 
-    /** 上次步进时刻：按住期间按固定节奏步进，不跟系统按键重复速率（约 20 次/秒太快） */
-    private var pendingSeekLastStepMs = 0L
+    /** 是否已越过 400ms 门槛进入长按连跳 */
+    private var seekHoldStarted = false
 
-    private val mainHandler = Handler(Looper.getMainLooper())
+    /** 当前前台的模态弹窗：显示期间方向键全部让位给弹窗的焦点系统 */
+    private var activeDialog: android.app.Dialog? = null
+
+    /** 控制条是否处于显示模式（显式状态，避开滑出动画 200ms 的 visibility 中间态） */
+    private var controlsShown = false
+
+    /** 400ms 判定：到点仍未松手，把首步放大到长按步长并开始连跳 */
+    private val seekLongPressRunnable = Runnable {
+        if (pendingSeekKeyCode != null && !seekHoldStarted) {
+            seekHoldStarted = true
+            appendSeekOffset(pendingSeekDirection * (SEEK_HOLD_STEP_MS - SEEK_STEP_MS))
+            mainHandler.postDelayed(seekHoldRunnable, SEEK_REPEAT_INTERVAL_MS)
+        }
+    }
+
+    /** 长按连跳：按固定节奏步进，不跟系统 key repeat（约 20 次/秒太快） */
+    private val seekHoldRunnable = object : Runnable {
+        override fun run() {
+            if (pendingSeekKeyCode == null || !seekHoldStarted) return
+            appendSeekOffset(pendingSeekDirection * SEEK_HOLD_STEP_MS)
+            mainHandler.postDelayed(this, SEEK_REPEAT_INTERVAL_MS)
+        }
+    }
 
     /** 居中提示自动隐藏 */
     private val hideHintRunnable = Runnable { binding.tvHint.visibility = View.GONE }
@@ -223,7 +254,7 @@ class PlayerActivity : AppCompatActivity() {
         // 返回键：控制条显示时先收起；退出播放需连按两次（不弹窗，遥控器误触也不会退出）
         onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (binding.topBar.visibility == View.VISIBLE) {
+                if (controlsShown) {
                     hideControls()
                     return
                 }
@@ -306,9 +337,14 @@ class PlayerActivity : AppCompatActivity() {
     // ------------------------------------------------------------------ 遥控器按键
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        // 模态弹窗（播放列表 / 倍速 / 删除 / 错误）在前台时全部让位：
+        // 方向键、确认键交给弹窗的焦点系统，Activity 不抢按键。
+        // 对应 VLC 的 isOptionsListShowing / isPlaybackSettingActive 直接 return false。
+        if (isDialogBlockingKeys()) return super.onKeyDown(keyCode, event)
+
         when (keyCode) {
-            // 确认键：只切换播放/暂停，不呼出控制条（控制条用菜单键召唤），
-            // 避免把焦点带进按钮区导致左右键与快进/快退冲突
+            // 确认键：焦点在控制条按钮上时交给系统点击按钮；否则只切换播放/暂停，
+            // 不呼出控制条（控制条用菜单键 / 上下键召唤），避免把焦点带进按钮区
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
                 if (event?.repeatCount == 0) {
                     if (controlsHasFocus()) return super.onKeyDown(keyCode, event)
@@ -318,14 +354,24 @@ class PlayerActivity : AppCompatActivity() {
             }
 
             KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                // 遥控器自带音量键，左右键专职控制进度（不再用于移动按钮焦点）
-                accumulateSeek(keyCode, event?.repeatCount ?: 0)
+                if (controlsShown) {
+                    // 按钮焦点模式：左右键专职在按钮间移动焦点（交回系统焦点导航）。
+                    // 控制条可见但焦点还留在画面上时，先落到播放/暂停按钮，
+                    // 否则系统找不到焦点目标，按键看起来没反应。
+                    if (!controlsHasFocus()) binding.btnPlayPause.requestFocus()
+                    scheduleHideControls()
+                    return super.onKeyDown(keyCode, event)
+                }
+                // 画面模式：预览式 seek。只在首次 KeyDown 登记任务，系统 key repeat
+                // 只吞掉不叠加（步进由 400ms / 250ms 定时器驱动，遥控器不发重复键也能连跳）。
+                if (event?.repeatCount == 0) startPendingSeek(keyCode)
                 return true
             }
 
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
-                // 上下键：呼出控制条，并在按钮之间切换焦点（音量交给遥控器实体键）
-                if (binding.topBar.visibility != View.VISIBLE) {
+                // 上下键是进入按钮焦点模式的显式入口：隐藏时呼出控制条并落到主按钮，
+                // 显示时在按钮之间循环（几何焦点搜索在电视上方向语义不好用）。
+                if (!controlsShown) {
                     showControls()
                     binding.btnPlayPause.requestFocus()
                     return true
@@ -336,7 +382,7 @@ class PlayerActivity : AppCompatActivity() {
 
             KeyEvent.KEYCODE_MENU -> {
                 if (event?.repeatCount == 0) {
-                    if (binding.topBar.visibility == View.VISIBLE) hideControls() else showControls(focusPlayPause = true)
+                    if (controlsShown) hideControls() else showControls(focusPlayPause = true)
                 }
                 return true
             }
@@ -354,11 +400,12 @@ class PlayerActivity : AppCompatActivity() {
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
-                seekBy(SEEK_STEP_MS)
+                // 不呼出控制条：否则刚快进完，左右键就从「快进」变成「切按钮焦点」
+                seekBy(SEEK_STEP_MS, revealControls = false)
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_REWIND -> {
-                seekBy(-SEEK_STEP_MS)
+                seekBy(-SEEK_STEP_MS, revealControls = false)
                 return true
             }
             KeyEvent.KEYCODE_MEDIA_NEXT -> {
@@ -374,7 +421,8 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
-        // 松开方向键：把累计的偏移量一次性 seek 过去
+        if (isDialogBlockingKeys()) return super.onKeyUp(keyCode, event)
+        // 松开方向键：短按（未达 400ms）与长按连跳都在这里一次性提交
         if (keyCode == pendingSeekKeyCode && (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT)) {
             flushPendingSeek()
             return true
@@ -383,49 +431,53 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     /**
-     * 按住方向键期间累计偏移并实时预览落点（不真正 seek）。
+     * 画面模式按下左右键：登记一次「待寻道」任务并立即预览单步落点。
      *
-     * 步长：单击（repeatCount == 0）走 [SEEK_STEP_MS]（10 秒），按住连发走
-     * [SEEK_HOLD_STEP_MS]（30 秒），长片快拖不用按上百次。
-     * 节奏：每 [SEEK_REPEAT_INTERVAL_MS] 走一步——系统 key repeat 约 20 次/秒，
-     * 直接跟随会一秒跳几百秒，太快没法用；250ms/30s 即按住 1 秒拖 120 秒。
+     * 400ms 内松手 = 短按，提交 [SEEK_STEP_MS]（10 秒）；
+     * 到点仍未松手 = 长按，[seekLongPressRunnable] 把首步放大到 [SEEK_HOLD_STEP_MS]
+     * 并开始每 [SEEK_REPEAT_INTERVAL_MS] 一步的连跳。
+     * 用计时器而非系统 key repeat 驱动，遥控器不发重复事件也能连跳。
      */
-    private fun accumulateSeek(keyCode: Int, repeatCount: Int = 0) {
+    private fun startPendingSeek(keyCode: Int) {
         val p = player ?: return
-        // 单击 = 10 秒；按住连发每一步放大到 30 秒，长片拖起来不至于要按上百次
-        val step = if (repeatCount > 0) SEEK_HOLD_STEP_MS else SEEK_STEP_MS
-        val delta = if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) step else -step
-        val now = android.os.SystemClock.elapsedRealtime()
-        if (pendingSeekKeyCode != keyCode) {
-            // 新一次按压：以当前位置为基准重新开始累计。
-            // 刻意不呼出控制条——左右键只负责快进/快退，控制条出现会把焦点
-            // 带进按钮区，按键就和按钮移动打架了
-            pendingSeekKeyCode = keyCode
-            pendingSeekOffsetMs = 0L
-            pendingSeekBaseMs = p.currentPosition
-            pendingSeekLastStepMs = now
-        } else {
-            // 按住连发：按固定节奏节流
-            if (now - pendingSeekLastStepMs < SEEK_REPEAT_INTERVAL_MS) return
-            pendingSeekLastStepMs = now
-        }
-        pendingSeekOffsetMs += delta
-        val duration = p.duration
+        cancelSeekTimers()
+        pendingSeekKeyCode = keyCode
+        pendingSeekDirection = if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) 1 else -1
+        pendingSeekOffsetMs = 0L
+        pendingSeekBaseMs = p.currentPosition
+        seekHoldStarted = false
+        // 刻意不呼出控制条：左右键只负责快进/快退，控制条一出现就进入按钮焦点模式
+        appendSeekOffset(pendingSeekDirection * SEEK_STEP_MS)
+        mainHandler.postDelayed(seekLongPressRunnable, SEEK_LONG_PRESS_MS)
+    }
+
+    /** 追加一帧预览偏移（只改进度条 / 时间 / 提示，不碰播放器位置） */
+    private fun appendSeekOffset(deltaMs: Long) {
+        pendingSeekOffsetMs += deltaMs
+        val duration = player?.duration ?: 0L
         val target = pendingSeekBaseMs + pendingSeekOffsetMs
         val clamped = if (duration > 0) target.coerceIn(0L, duration) else target.coerceAtLeast(0L)
-        // 进度条与时间文本实时显示预览落点
         if (duration > 0) {
             binding.seekProgress.progress = (clamped * 1000 / duration).toInt().coerceIn(0, 1000)
         }
         binding.tvPosition.text = formatDuration(clamped)
-        val hint = if (delta > 0) R.string.tv_hint_seek_preview else R.string.tv_hint_rew_preview
+        val hint = if (deltaMs > 0) R.string.tv_hint_seek_preview else R.string.tv_hint_rew_preview
         showHint(getString(hint, formatDuration(clamped)))
     }
 
-    /** 松开按键 / 离开页面：把累计的偏移量真正 seek 过去 */
+    /** 取消 400ms 判定与连跳定时器（换方向 / 松手 / 打开弹窗 / 切集时都要调用） */
+    private fun cancelSeekTimers() {
+        mainHandler.removeCallbacks(seekLongPressRunnable)
+        mainHandler.removeCallbacks(seekHoldRunnable)
+    }
+
+    /** 松开按键 / 离开页面 / 打开弹窗：把累计的偏移量真正 seek 过去 */
     private fun flushPendingSeek() {
-        val keyCode = pendingSeekKeyCode ?: return
+        if (pendingSeekKeyCode == null) return
+        cancelSeekTimers()
         pendingSeekKeyCode = null
+        seekHoldStarted = false
+        pendingSeekDirection = 0
         val p = player ?: run { pendingSeekOffsetMs = 0L; return }
         if (pendingSeekOffsetMs == 0L) return
         val duration = p.duration
@@ -440,6 +492,22 @@ class PlayerActivity : AppCompatActivity() {
     /** 焦点是否在控制条按钮上 */
     private fun controlsHasFocus(): Boolean =
         binding.topBar.findFocus() != null || binding.bottomBar.findFocus() != null
+
+    /** 是否有模态弹窗在前台（显示期间按键全部让位） */
+    private fun isDialogBlockingKeys(): Boolean = activeDialog?.isShowing == true
+
+    /**
+     * 统一创建并展示播放页弹窗：登记 [activeDialog]、dismiss 后自动解绑。
+     * 打开前先把还没提交的预览 seek 落定——否则弹窗会截走 KeyUp，偏移量会悬空。
+     */
+    private fun showPlayerDialog(builder: MaterialAlertDialogBuilder): android.app.Dialog {
+        flushPendingSeek()
+        val dlg = builder.create()
+        dlg.setOnDismissListener { if (activeDialog === dlg) activeDialog = null }
+        activeDialog = dlg
+        dlg.show()
+        return dlg
+    }
 
     // ------------------------------------------------------------------ 音量控制
 
@@ -488,12 +556,13 @@ class PlayerActivity : AppCompatActivity() {
 
     private fun confirmDeleteCurrent() {
         val name = videos.getOrNull(index) ?: return
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.delete_title)
-            .setMessage(getString(R.string.delete_file_message, name))
-            .setPositiveButton(R.string.delete_confirm) { _, _ -> deleteCurrent(name) }
-            .setNegativeButton(R.string.server_cancel, null)
-            .show()
+        showPlayerDialog(
+            MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.delete_title)
+                .setMessage(getString(R.string.delete_file_message, name))
+                .setPositiveButton(R.string.delete_confirm) { _, _ -> deleteCurrent(name) }
+                .setNegativeButton(R.string.server_cancel, null)
+        )
     }
 
     /** 删除当前视频后自动跳到下一个；没有下一个则退出播放页 */
@@ -829,19 +898,20 @@ class PlayerActivity : AppCompatActivity() {
             .toTypedArray()
         val checked = SpeedOptions.indexOf(SettingsRepository.normalSpeed)
             .coerceAtLeast(SpeedOptions.DEFAULT_INDEX)
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.player_speed_title)
-            .setSingleChoiceItems(labels, checked) { dlg, which ->
-                val sp = SpeedOptions.VALUES[which]
-                SettingsRepository.normalSpeed = sp
-                normalSpeed = sp
-                player?.playbackParameters = PlaybackParameters(sp)
-                updateSpeedButton()
-                toast(getString(R.string.settings_speed_value, sp))
-                dlg.dismiss()
-            }
-            .setNegativeButton(R.string.server_cancel, null)
-            .show()
+        showPlayerDialog(
+            MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.player_speed_title)
+                .setSingleChoiceItems(labels, checked) { dlg, which ->
+                    val sp = SpeedOptions.VALUES[which]
+                    SettingsRepository.normalSpeed = sp
+                    normalSpeed = sp
+                    player?.playbackParameters = PlaybackParameters(sp)
+                    updateSpeedButton()
+                    toast(getString(R.string.settings_speed_value, sp))
+                    dlg.dismiss()
+                }
+                .setNegativeButton(R.string.server_cancel, null)
+        )
     }
 
     // ------------------------------------------------------------------ 播放控制
@@ -860,15 +930,19 @@ class PlayerActivity : AppCompatActivity() {
         }
     }
 
-    /** 直接 seek（按钮点击 / 媒体键），与按住方向键的预览式 seek 相区分 */
-    private fun seekBy(deltaMs: Long) {
+    /**
+     * 直接 seek（按钮点击 / 媒体键），与按住方向键的预览式 seek 相区分。
+     * [revealControls] 为 false 时不呼出控制条：媒体键快进属于画面模式的动作，
+     * 不该顺手把按键语义切成「按钮焦点模式」。
+     */
+    private fun seekBy(deltaMs: Long, revealControls: Boolean = true) {
         val p = player ?: return
         val target = (p.currentPosition + deltaMs).coerceAtLeast(0L)
         val duration = p.duration
         userAdjustedPosition = true
         p.seekTo(if (duration > 0) target.coerceAtMost(duration) else target)
         updateProgress()
-        showControls()
+        if (revealControls) showControls()
         showHint(getString(R.string.hint_seek, formatDuration(p.currentPosition)))
     }
 
@@ -909,12 +983,12 @@ class PlayerActivity : AppCompatActivity() {
             playlistDialog?.dismiss()
             if (position != index) playAt(position)
         }
-        playlistDialog = MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.player_playlist_title)
-            .setView(view)
-            .setNegativeButton(R.string.server_cancel, null)
-            .create()
-            .also { it.show() }
+        playlistDialog = showPlayerDialog(
+            MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.player_playlist_title)
+                .setView(view)
+                .setNegativeButton(R.string.server_cancel, null)
+        )
         // 打开时定位到正在播放的视频，并把焦点落到该项（遥控器可直接上下选择）
         b.recyclerPlaylist.post {
             if (index in videos.indices) layoutManager.scrollToPositionWithOffset(index, 0)
@@ -1005,17 +1079,18 @@ class PlayerActivity : AppCompatActivity() {
         binding.tvError.visibility = View.VISIBLE
 
         val hasNext = index + 1 < videos.size
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.player_error_title)
-            .setMessage(text)
-            .setCancelable(false)
-            .setPositiveButton(
-                if (hasNext) R.string.player_error_action_next else R.string.player_error_action_retry
-            ) { _, _ ->
-                if (hasNext) playNext(fromUser = true) else playAt(index)
-            }
-            .setNegativeButton(R.string.player_error_action_close) { _, _ -> finish() }
-            .show()
+        showPlayerDialog(
+            MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.player_error_title)
+                .setMessage(text)
+                .setCancelable(false)
+                .setPositiveButton(
+                    if (hasNext) R.string.player_error_action_next else R.string.player_error_action_retry
+                ) { _, _ ->
+                    if (hasNext) playNext(fromUser = true) else playAt(index)
+                }
+                .setNegativeButton(R.string.player_error_action_close) { _, _ -> finish() }
+        )
     }
 
     // ------------------------------------------------------------------ 控制条显隐
@@ -1062,22 +1137,29 @@ class PlayerActivity : AppCompatActivity() {
      * 一般要么直接按确认，要么在按钮间移动，落到主按钮上最顺手。
      */
     private fun showControls(focusPlayPause: Boolean = false) {
+        val entering = !controlsShown
+        // 从画面模式切进来时，若还有没松手的预览 seek，先提交收尾，别跨模式悬挂
+        if (entering) flushPendingSeek()
+        controlsShown = true
         animateBarIn(binding.topBar, -1)
         animateBarIn(binding.bottomBar, 1)
         setBottomMarginPx(binding.tvSubtitleOverlay, subtitleBottomPx(controlsVisible = true))
         setBottomMarginPx(binding.tvHint, hintBottomPx(controlsVisible = true))
         if (focusPlayPause) binding.btnPlayPause.requestFocus()
         scheduleHideControls()
+        // 刚从画面模式切进来时提示一次：此时左右键是切按钮焦点，不再是快进
+        if (entering) showHint(getString(R.string.tv_hint_controls_mode))
     }
 
     private fun hideControls() {
+        controlsShown = false
         animateBarOut(binding.topBar, -1)
         animateBarOut(binding.bottomBar, 1)
         setBottomMarginPx(binding.tvSubtitleOverlay, subtitleBottomPx(controlsVisible = false))
         setBottomMarginPx(binding.tvHint, hintBottomPx(controlsVisible = false))
         mainHandler.removeCallbacks(hideControlsRunnable)
-        // 焦点从控制条收回画面：否则按钮已隐藏、焦点仍留在按钮上，
-        // 左右键会被焦点系统吃掉，表现为「按左右键不快进」
+        // 焦点从控制条收回画面：按钮隐藏后不该继续持有焦点，
+        // 否则确认键会点到看不见的按钮，画面模式的左右键也少了明确的焦点归属
         val focused = currentFocus
         if (focused != null && (isInside(binding.topBar, focused) || isInside(binding.bottomBar, focused))) {
             binding.root.requestFocus()
@@ -1172,7 +1254,7 @@ class PlayerActivity : AppCompatActivity() {
     }
 
     private fun scheduleHideControls() {
-        if (binding.topBar.visibility != View.VISIBLE) return
+        if (!controlsShown) return
         mainHandler.removeCallbacks(hideControlsRunnable)
         mainHandler.postDelayed(hideControlsRunnable, CONTROL_HIDE_DELAY_MS)
     }
@@ -1190,13 +1272,16 @@ class PlayerActivity : AppCompatActivity() {
         private const val CONTROL_HIDE_DELAY_MS = 4_000L
         private const val HINT_HIDE_DELAY_MS = 1_500L
 
-        /** 遥控器单击左右键的快退 / 快进步长 */
+        /** 画面模式短按左右键的快退 / 快进步长 */
         private const val SEEK_STEP_MS = 10_000L
 
-        /** 按住左右键连发时每一步的步长（幅度放大到 30 秒） */
+        /** 长按连跳每一步的步长（幅度放大到 30 秒） */
         private const val SEEK_HOLD_STEP_MS = 30_000L
 
-        /** 按住方向键时的步进间隔：每 250ms 走一步（按住 1 秒约 120 秒），不跟系统重复速率 */
+        /** 短按 / 长按的分界：按住 400ms 仍未松手才进入连跳（参照 TV 遥控器通行做法） */
+        private const val SEEK_LONG_PRESS_MS = 400L
+
+        /** 长按连跳的步进间隔：每 250ms 走一步，不跟系统重复速率 */
         private const val SEEK_REPEAT_INTERVAL_MS = 250L
 
         /** 连按两次返回退出的确认窗口：超时后第一次返回作废 */
