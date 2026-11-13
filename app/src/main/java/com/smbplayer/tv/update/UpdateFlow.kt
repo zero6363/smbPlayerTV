@@ -1,5 +1,6 @@
 package com.smbplayer.tv.update
 
+import android.os.SystemClock
 import android.view.LayoutInflater
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -14,6 +15,8 @@ import com.smbplayer.tv.util.logError
 import com.smbplayer.tv.util.logInfo
 import com.smbplayer.tv.util.toast
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -33,6 +36,9 @@ object UpdateFlow {
 
     /** 更新说明太长时截断，TV 对话框一屏放不下 */
     private const val NOTES_LIMIT = 600
+
+    /** 更新提示框无操作自动收起：电视常开着没人按，别让对话框一直占屏、抢主页焦点 */
+    private const val UPDATE_DIALOG_TIMEOUT_MS = 30_000L
 
     @Volatile
     private var checking = false
@@ -103,13 +109,36 @@ object UpdateFlow {
             if (notes.isNotEmpty()) {
                 append("\n\n").append(notes)
             }
+            append("\n\n").append(
+                activity.getString(R.string.update_auto_dismiss_hint, UPDATE_DIALOG_TIMEOUT_MS / 1000)
+            )
         }
-        MaterialAlertDialogBuilder(activity)
+        val dialog = MaterialAlertDialogBuilder(activity)
             .setTitle(activity.getString(R.string.update_found_title, release.version))
             .setMessage(message)
             .setPositiveButton(R.string.update_now) { _, _ -> proceed(activity, release) }
             .setNegativeButton(R.string.update_later, null)
             .show()
+
+        // 电视经常开着没人按：无操作到点自动收起（等同「稍后」），避免提示框一直占屏。
+        // 任意按键刷新计时；协程绑定 Activity 生命周期，页面销毁自动取消，不留后台定时器。
+        var lastInteractionMs = SystemClock.elapsedRealtime()
+        val timeoutJob = activity.lifecycleScope.launch {
+            while (isActive && dialog.isShowing) {
+                val remaining = UPDATE_DIALOG_TIMEOUT_MS -
+                    (SystemClock.elapsedRealtime() - lastInteractionMs)
+                if (remaining <= 0) {
+                    dialog.dismiss()
+                    break
+                }
+                delay(remaining)
+            }
+        }
+        dialog.setOnKeyListener { _, _, _ ->
+            lastInteractionMs = SystemClock.elapsedRealtime()
+            false // 不消费按键，方向键 / 确认键照常操作对话框
+        }
+        dialog.setOnDismissListener { timeoutJob.cancel() }
     }
 
     /** 已经下好且大小对得上就直接装，省一次 12MB 下载（比如上次停在授权页） */
