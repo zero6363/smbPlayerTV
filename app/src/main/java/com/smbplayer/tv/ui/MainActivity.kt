@@ -23,6 +23,7 @@ import com.smbplayer.tv.databinding.ActivityMainBinding
 import com.smbplayer.tv.databinding.DialogServerEditBinding
 import com.smbplayer.tv.player.PlayerActivity
 import com.smbplayer.tv.smb.SmbGateway
+import com.smbplayer.tv.update.UpdateFlow
 import com.smbplayer.tv.util.SmbPath
 import com.smbplayer.tv.util.toast
 
@@ -128,6 +129,8 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         refresh()
+        // 电视上更新麻烦：回主页时静默看一眼 GitHub release（默认 6 小时一次，失败不打扰）
+        UpdateFlow.autoCheck(this)
     }
 
     /**

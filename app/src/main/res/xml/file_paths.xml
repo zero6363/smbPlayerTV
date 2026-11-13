@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 自动更新的安装包放在 cacheDir/update/，通过 FileProvider 交给系统安装器 -->
+    <cache-path
+        name="update"
+        path="update/" />
+</paths>

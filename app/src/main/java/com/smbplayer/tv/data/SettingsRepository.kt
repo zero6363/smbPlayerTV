@@ -16,6 +16,10 @@ object SettingsRepository {
     private const val KEY_SORT_FIELD = "sort_field"
     private const val KEY_SORT_ASCENDING = "sort_ascending"
     private const val KEY_SUBTITLE_SIZE = "subtitle_size"
+    private const val KEY_SHOW_ALL_FILES = "show_all_files"
+    private const val KEY_LAST_UPDATE_CHECK = "last_update_check"
+    private const val KEY_PENDING_UPDATE_VERSION = "pending_update_version"
+    private const val KEY_DOWNLOADED_UPDATE_VERSION = "downloaded_update_version"
 
     private val lock = Any()
 
@@ -79,5 +83,44 @@ object SettingsRepository {
         get() = store().getInt(KEY_SUBTITLE_SIZE, SubtitleSizes.DEFAULT)
         set(value) {
             store().edit().putInt(KEY_SUBTITLE_SIZE, value).apply()
+        }
+
+    /**
+     * 浏览页是否显示全部文件。
+     *
+     * 默认 false：目录里只列文件夹和视频（ts / flv / mp4 等），
+     * 把字幕、nfo、封面图之类的杂项挡在外面。需要看图片或其他文件时，
+     * 在浏览页菜单里临时切到「显示所有文件」。
+     */
+    var showAllFiles: Boolean
+        get() = store().getBoolean(KEY_SHOW_ALL_FILES, false)
+        set(value) {
+            store().edit().putBoolean(KEY_SHOW_ALL_FILES, value).apply()
+        }
+
+    /** 上次检查更新的时间戳（毫秒），用于启动时按间隔节流，避免每次回主页都请求 GitHub */
+    var lastUpdateCheck: Long
+        get() = store().getLong(KEY_LAST_UPDATE_CHECK, 0L)
+        set(value) {
+            store().edit().putLong(KEY_LAST_UPDATE_CHECK, value).apply()
+        }
+
+    /**
+     * 已经调起安装器、等待生效的版本（如 "1.9-tv"）。
+     *
+     * 电视盒子不会自己删安装包，这个标记让新版本第一次启动时知道
+     * 「更新已经装上了」，从而把 cacheDir/update 里那个 APK 删掉。
+     */
+    var pendingUpdateVersion: String
+        get() = store().getString(KEY_PENDING_UPDATE_VERSION, "").orEmpty()
+        set(value) {
+            store().edit().putString(KEY_PENDING_UPDATE_VERSION, value).apply()
+        }
+
+    /** 已经下载到本地、可以直接安装的版本（避免每次点「立即更新」都重新下 12MB） */
+    var downloadedUpdateVersion: String
+        get() = store().getString(KEY_DOWNLOADED_UPDATE_VERSION, "").orEmpty()
+        set(value) {
+            store().edit().putString(KEY_DOWNLOADED_UPDATE_VERSION, value).apply()
         }
 }

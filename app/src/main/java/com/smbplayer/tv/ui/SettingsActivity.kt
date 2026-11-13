@@ -9,6 +9,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.smbplayer.tv.R
 import com.smbplayer.tv.data.SettingsRepository
 import com.smbplayer.tv.databinding.ActivitySettingsBinding
+import com.smbplayer.tv.update.UpdateFlow
 import com.smbplayer.tv.util.Changelog
 import com.smbplayer.tv.util.toast
 
@@ -43,6 +44,11 @@ class SettingsActivity : AppCompatActivity() {
 
         // 遥控器操作说明
         binding.rowTvHelp.setOnClickListener { showTvHelp() }
+
+        // 检查更新（Android TV 没应用商店，更新入口只有这里和主页自动检查）
+        binding.tvUpdateVersion.text =
+            getString(R.string.settings_update_version, appVersion())
+        binding.rowCheckUpdate.setOnClickListener { UpdateFlow.check(this, manual = true) }
 
         // 更新日志
         binding.rowChangelog.setOnClickListener { showChangelog() }

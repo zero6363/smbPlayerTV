@@ -38,6 +38,12 @@
         app:showAsAction="never" />
 
     <item
+        android:id="@+id/action_show_all_files"
+        android:checkable="true"
+        android:title="@string/action_show_all_files"
+        app:showAsAction="never" />
+
+    <item
         android:id="@+id/action_switch_share"
         android:title="@string/action_switch_share"
         app:showAsAction="never" />

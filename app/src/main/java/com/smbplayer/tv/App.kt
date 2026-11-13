@@ -6,6 +6,7 @@ import com.smbplayer.tv.data.FavoriteRepository
 import com.smbplayer.tv.data.PlaybackProgressRepository
 import com.smbplayer.tv.data.ServerRepository
 import com.smbplayer.tv.data.SettingsRepository
+import com.smbplayer.tv.update.UpdateInstaller
 import com.smbplayer.tv.util.AppLog
 import com.smbplayer.tv.util.logError
 import com.smbplayer.tv.util.logInfo
@@ -21,6 +22,8 @@ class App : Application() {
         PlaybackProgressRepository.init(this)
         AppLog.init(this)
         installCrashHandler()
+        // 更新装好后第一次启动：把 cacheDir/update 里那份 APK 删掉（电视不会自己清）
+        UpdateInstaller.cleanupOnStart(this)
         logInfo("应用启动")
     }
 

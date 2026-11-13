@@ -59,6 +59,7 @@
     <string name="deleted">已删除：%1$s</string>
     <string name="select_all">全选</string>
     <string name="browse_count">文件夹 %1$d · 文件 %2$d</string>
+    <string name="browse_no_video_files">这个文件夹没有视频文件\n按菜单键选「显示所有文件」可查看其他文件</string>
     <string name="selected_count">已选 %1$d 项</string>
     <string name="delete_batch_message">确定删除选中的 %1$d 项吗？此操作不可恢复。</string>
     <string name="delete_partial">已删除 %1$d 项，%2$d 项失败</string>
@@ -143,9 +144,32 @@
     <string name="watched_done">已看完</string>
     <string name="watched_not_started">刚开始看</string>
 
+    <!-- 文件过滤（浏览页菜单） -->
+    <string name="action_show_all_files">显示所有文件</string>
+    <string name="show_all_files_on">已显示全部文件</string>
+    <string name="show_all_files_off">仅显示视频文件</string>
+
+    <!-- 自动更新 -->
+    <string name="settings_check_update">检查更新</string>
+    <string name="update_checking">正在检查更新…</string>
+    <string name="update_latest">已是最新版本（v%1$s）</string>
+    <string name="update_check_failed">检查更新失败：%1$s</string>
+    <string name="update_found_title">发现新版本 v%1$s</string>
+    <string name="update_version_line">当前 v%1$s → 最新 v%2$s</string>
+    <string name="update_now">立即更新</string>
+    <string name="update_later">稍后</string>
+    <string name="update_downloading_title">正在下载 v%1$s</string>
+    <string name="update_download_progress">%1$d%%</string>
+    <string name="update_download_failed">下载失败：%1$s</string>
+    <string name="update_permission_title">需要允许安装应用</string>
+    <string name="update_permission_message">系统默认不允许「%1$s」自行安装更新。\n请在接下来的设置页里允许本应用安装应用，返回后再点一次「检查更新」即可继续（安装包已下载好，不会重复下载）。</string>
+    <string name="update_permission_open">去设置</string>
+    <string name="update_installing">已调起安装，请用遥控器确认</string>
+    <string name="update_install_failed">无法调起安装器，请确认系统允许安装应用</string>
+    <string name="settings_update_version">当前版本 v%1$s</string>
+
     <!-- 排序 -->
-    <string name="action_sort">排序</string>
-    <string name="sort_title">排序方式</string>
+    <string name="action_sort">排序</string>    <string name="sort_title">排序方式</string>
     <string name="sort_name_asc">文件名（升序）</string>
     <string name="sort_name_desc">文件名（降序）</string>
     <string name="sort_size_asc">大小（升序，小的在前）</string>

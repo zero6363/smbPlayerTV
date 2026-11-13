@@ -121,6 +121,9 @@ class BrowseActivity : AppCompatActivity() {
 
         binding.toolbar.title = server.name.ifBlank { server.displayHost }
         binding.toolbar.inflateMenu(R.menu.menu_browse)
+        // 「显示所有文件」是复选项：进入页面时同步上次的选择
+        binding.toolbar.menu.findItem(R.id.action_show_all_files)?.isChecked =
+            SettingsRepository.showAllFiles
         binding.toolbar.setNavigationOnClickListener { onBackPressedDispatcher.onBackPressed() }
         binding.toolbar.setOnMenuItemClickListener { item ->
             when (item.itemId) {
@@ -152,6 +155,10 @@ class BrowseActivity : AppCompatActivity() {
                 }
                 R.id.action_sort -> {
                     showSortDialog()
+                    true
+                }
+                R.id.action_show_all_files -> {
+                    toggleShowAllFiles()
                     true
                 }
                 else -> false
@@ -350,6 +357,25 @@ class BrowseActivity : AppCompatActivity() {
         binding.recycler.scrollToPosition(0)
     }
 
+    /** 目录条目过滤：默认只留文件夹和视频（ts / flv / mp4…），切到「显示所有文件」后原样返回 */
+    private fun visibleEntries(list: List<SmbEntry>): List<SmbEntry> {
+        if (SettingsRepository.showAllFiles) return list
+        return list.filter { it.isDirectory || VideoFormats.isVideo(it.name) }
+    }
+
+    /**
+     * 切换「仅视频 / 全部文件」。选择写回设置，换目录、重进页面都沿用；
+     * 切换后重新拉取当前目录（原始列表已被过滤，改不了内存里的旧数据），并尽量滚回原位。
+     */
+    private fun toggleShowAllFiles() {
+        val showAll = !SettingsRepository.showAllFiles
+        SettingsRepository.showAllFiles = showAll
+        binding.toolbar.menu.findItem(R.id.action_show_all_files)?.isChecked = showAll
+        toast(if (showAll) R.string.show_all_files_on else R.string.show_all_files_off)
+        rememberCurrentScroll()
+        loadDirectory()
+    }
+
     private fun videoNames(): List<String> =
         entries.asSequence()
             .filter { !it.isDirectory && VideoFormats.isVideo(it.name) }
@@ -444,7 +470,9 @@ class BrowseActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 logInfo("加载目录: 共享=$shareName 路径=$currentPath")
-                val list = withContext(Dispatchers.IO) { session.list(shareName, currentPath) }
+                val all = withContext(Dispatchers.IO) { session.list(shareName, currentPath) }
+                // 默认只留文件夹和视频，字幕/封面/nfo 等杂项不占列表
+                val list = visibleEntries(all)
                 // 按用户选的排序方式排（默认文件名升序，目录在前）
                 entries = SortOptions.sorted(
                     list,
@@ -453,9 +481,9 @@ class BrowseActivity : AppCompatActivity() {
                 )
                 adapter.submit(entries, progressByName(entries))
                 showLoading(false)
-                logInfo("目录加载完成: ${list.size} 项")
-                updateHeader(list)
-                applyPendingRestore(list)
+                logInfo("目录加载完成: ${all.size} 项，列表显示 ${list.size} 项")
+                updateHeader(list, all)
+                applyPendingRestore(entries)
                 focusEntryIfNeeded()
             } catch (e: CancellationException) {
                 throw e // 用户离开页面：正常取消，静默结束
@@ -482,13 +510,19 @@ class BrowseActivity : AppCompatActivity() {
             text.contains("STATUS_OBJECT_PATH_NOT_FOUND", ignoreCase = true)
     }
 
-    private fun updateHeader(list: List<SmbEntry>) {
+    private fun updateHeader(list: List<SmbEntry>, all: List<SmbEntry> = list) {
         val prefix = if (currentPath.isEmpty()) "/" else "/$currentPath/"
         binding.tvPath.text = "$shareName$prefix"
         // 分开统计文件夹/文件：目录数为 0 说明服务端没返回目录条目（不是界面隐藏）
         val dirCount = list.count { it.isDirectory }
         binding.tvCount.text = getString(R.string.browse_count, dirCount, list.size - dirCount)
         binding.emptyView.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
+        // 目录里其实有文件、只是被「仅视频」挡住了：别提示「文件夹是空的」，给出恢复入口
+        binding.tvEmpty.text = if (list.isEmpty() && all.isNotEmpty()) {
+            getString(R.string.browse_no_video_files)
+        } else {
+            getString(R.string.browse_empty)
+        }
         binding.toolbar.menu.findItem(R.id.action_play_all)?.isVisible = videoNames().isNotEmpty()
         binding.toolbar.menu.findItem(R.id.action_view_images)?.isVisible = imageNames().isNotEmpty()
     }
