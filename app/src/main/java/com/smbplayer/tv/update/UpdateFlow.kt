@@ -1,12 +1,12 @@
 package com.smbplayer.tv.update
 
 import android.os.SystemClock
-import android.view.LayoutInflater
-import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.smbplayer.tv.R
 import com.smbplayer.tv.data.SettingsRepository
 import com.smbplayer.tv.util.formatSize
@@ -16,15 +16,20 @@ import com.smbplayer.tv.util.logInfo
 import com.smbplayer.tv.util.toast
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
 
 /**
- * 检查 → 提示 → 下载 → 安装 的完整流程（主页自动检查 + 设置页手动检查共用）。
+ * 检查 → 提示 → 后台下载 → 安装 的完整流程（主页自动检查 + 设置页手动检查共用）。
  *
  * 电视上没有应用商店，用户也不会去点浏览器下载 APK，
- * 所以这里把「发现新版本」做成一个对话框：确认后应用自己下、自己调起安装器。
+ * 所以这里把「发现新版本」做成一个对话框：确认后应用自己在后台下、下完再提示安装。
+ *
+ * 下载本身在 [UpdateManager] 的应用级协程里跑，不绑页面：确认后就能关掉对话框去播放，
+ * 页面只通过 [attach] 订阅进度。播放页不订阅，所以看片时不会突然弹出安装框；
+ * 退出播放页回到列表页时再提示。
  */
 object UpdateFlow {
 
@@ -47,6 +52,9 @@ object UpdateFlow {
 
     /** 主页 onResume 调用：节流后静默检查，失败不打扰用户 */
     fun autoCheck(activity: AppCompatActivity) {
+        // 已经有下好的包在等安装：别再弹「发现新版本」压在安装提示上
+        val state = UpdateManager.state.value
+        if (state is UpdateManager.State.Ready && state.apk.isFile) return
         if (autoScheduled) return
         val sinceLast = System.currentTimeMillis() - SettingsRepository.lastUpdateCheck
         if (sinceLast in 0 until CHECK_INTERVAL_MS) return
@@ -55,6 +63,31 @@ object UpdateFlow {
             autoScheduled = false
             if (activity.isAlive()) check(activity, manual = false)
         }, AUTO_CHECK_DELAY_MS)
+    }
+
+    /**
+     * 页面 onCreate 调用一次：把后台下载状态接到界面上（进入前台时自动开始订阅，离开自动停）。
+     *
+     * - 下载失败只提示一次；
+     * - 下载完成时按 [UpdateManager.takeInstallPrompt] 弹「立即安装」，只弹一次；
+     * - [onState] 在每次状态变化时回调（主页顶栏、设置页说明文字用它刷新进度）。
+     *
+     * 订阅只在 RESUMED 状态生效：页面被播放页盖住时自然停止，回到前台拿到当前状态继续。
+     * 播放页不调用，所以看片时不会被安装弹窗打断。
+     */
+    fun attach(activity: AppCompatActivity, onState: (UpdateManager.State) -> Unit = {}) {
+        if (!activity.isAlive()) return
+        activity.lifecycleScope.launch {
+            activity.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                UpdateManager.state.collect { state ->
+                    if (activity.isAlive()) {
+                        reportFailure(activity)
+                        onState(state)
+                        if (state is UpdateManager.State.Ready) showInstallPrompt(activity)
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -76,6 +109,20 @@ object UpdateFlow {
                     if (manual) activity.toast(activity.getString(R.string.update_latest, local))
                     return@launch
                 }
+                if (UpdateManager.isDownloading(release.version)) {
+                    if (manual) {
+                        val percent = (UpdateManager.state.value as? UpdateManager.State.Downloading)
+                            ?.percent ?: 0
+                        activity.toast(
+                            activity.getString(
+                                R.string.update_already_downloading,
+                                release.version,
+                                percent,
+                            )
+                        )
+                    }
+                    return@launch
+                }
                 logInfo("发现新版本 v${release.version}（当前 v$local）")
                 if (activity.isAlive()) showUpdateDialog(activity, release, local)
             } catch (e: CancellationException) {
@@ -92,6 +139,21 @@ object UpdateFlow {
         }
     }
 
+    /**
+     * 设置页「检查更新」：按当前状态分流。
+     *
+     * 正在后台下载 → 显示进度（可取消）；已下好 → 直接问要不要装；否则去检查新版本。
+     */
+    fun manualCheck(activity: AppCompatActivity) {
+        val state = UpdateManager.state.value
+        if (state is UpdateManager.State.Downloading) {
+            showDownloadingDialog(activity, state)
+            return
+        }
+        if (installCached(activity)) return
+        check(activity, manual = true)
+    }
+
     private fun showUpdateDialog(
         activity: AppCompatActivity,
         release: UpdateChecker.Release,
@@ -101,6 +163,9 @@ object UpdateFlow {
             .replace("\r\n", "\n")
             .trim()
             .let { if (it.length > NOTES_LIMIT) it.take(NOTES_LIMIT).trimEnd() + "…" else it }
+        // 上次下好但没装成（比如停在授权页 / 用户点了稍后）：这次点「立即更新」直接装
+        val cached = SettingsRepository.downloadedUpdateVersion == release.version &&
+            UpdateInstaller.downloadedApk(activity) != null
         val message = buildString {
             append(activity.getString(R.string.update_version_line, local, release.version))
             if (release.apkSize > 0) {
@@ -110,6 +175,11 @@ object UpdateFlow {
                 append("\n\n").append(notes)
             }
             append("\n\n").append(
+                activity.getString(
+                    if (cached) R.string.update_cached_hint else R.string.update_background_hint
+                )
+            )
+            append("\n").append(
                 activity.getString(R.string.update_auto_dismiss_hint, UPDATE_DIALOG_TIMEOUT_MS / 1000)
             )
         }
@@ -118,27 +188,8 @@ object UpdateFlow {
             .setMessage(message)
             .setPositiveButton(R.string.update_now) { _, _ -> proceed(activity, release) }
             .setNegativeButton(R.string.update_later, null)
-            .show()
-
-        // 电视经常开着没人按：无操作到点自动收起（等同「稍后」），避免提示框一直占屏。
-        // 任意按键刷新计时；协程绑定 Activity 生命周期，页面销毁自动取消，不留后台定时器。
-        var lastInteractionMs = SystemClock.elapsedRealtime()
-        val timeoutJob = activity.lifecycleScope.launch {
-            while (isActive && dialog.isShowing) {
-                val remaining = UPDATE_DIALOG_TIMEOUT_MS -
-                    (SystemClock.elapsedRealtime() - lastInteractionMs)
-                if (remaining <= 0) {
-                    dialog.dismiss()
-                    break
-                }
-                delay(remaining)
-            }
-        }
-        dialog.setOnKeyListener { _, _, _ ->
-            lastInteractionMs = SystemClock.elapsedRealtime()
-            false // 不消费按键，方向键 / 确认键照常操作对话框
-        }
-        dialog.setOnDismissListener { timeoutJob.cancel() }
+            .create()
+        showTracked(activity, dialog, UPDATE_DIALOG_TIMEOUT_MS)
     }
 
     /** 已经下好且大小对得上就直接装，省一次 12MB 下载（比如上次停在授权页） */
@@ -151,48 +202,127 @@ object UpdateFlow {
             install(activity, apk, release.version)
             return
         }
-        download(activity, release)
+        // 后台下载：立刻返回，用户可以继续浏览 / 播放，下完由 attach 弹安装提示
+        if (UpdateManager.start(activity, release)) {
+            activity.toast(activity.getString(R.string.update_download_started, release.version))
+        }
     }
 
-    private fun download(activity: AppCompatActivity, release: UpdateChecker.Release) {
-        val view = LayoutInflater.from(activity).inflate(R.layout.dialog_update_progress, null)
-        val bar = view.findViewById<LinearProgressIndicator>(R.id.update_progress)
-        val label = view.findViewById<TextView>(R.id.tv_update_progress)
-        label.text = activity.getString(R.string.update_download_progress, 0)
+    /** 有已下载好的包就问一句要不要装；没有则返回 false */
+    private fun installCached(activity: AppCompatActivity): Boolean {
+        val apk = UpdateInstaller.downloadedApk(activity) ?: return false
+        val version = SettingsRepository.downloadedUpdateVersion
+        if (version.isEmpty()) return false
+        if (!UpdateChecker.isNewer(version, UpdateInstaller.appVersion(activity))) return false
+        confirmInstall(activity, apk, version)
+        return true
+    }
 
+    /** 下载完成后的安装提示（每次下载只弹一次，见 [UpdateManager.takeInstallPrompt]） */
+    private fun showInstallPrompt(activity: AppCompatActivity) {
+        if (!activity.isAlive()) return
+        val ready = UpdateManager.takeInstallPrompt() ?: return
+        // 包被系统清缓存删掉时别再弹，下次检查更新会重新下
+        if (!ready.apk.isFile) return
+        confirmInstall(activity, ready.apk, ready.version)
+    }
+
+    private fun confirmInstall(activity: AppCompatActivity, apk: File, version: String) {
+        if (!activity.isAlive()) return
         val dialog = MaterialAlertDialogBuilder(activity)
-            .setTitle(activity.getString(R.string.update_downloading_title, release.version))
-            .setView(view)
-            .setCancelable(false)
+            .setTitle(activity.getString(R.string.update_ready_title, version))
+            .setMessage(
+                activity.getString(
+                    R.string.update_ready_message,
+                    formatSize(apk.length()),
+                    UPDATE_DIALOG_TIMEOUT_MS / 1000,
+                )
+            )
+            .setPositiveButton(R.string.update_install_now) { _, _ ->
+                install(activity, apk, version)
+            }
+            .setNegativeButton(R.string.update_later, null)
             .create()
-        dialog.show()
+        showTracked(activity, dialog, UPDATE_DIALOG_TIMEOUT_MS)
+    }
 
-        activity.lifecycleScope.launch {
-            try {
-                val apk: File = UpdateDownloader.download(activity, release) { percent ->
-                    activity.runOnUiThread {
-                        if (activity.isAlive() && dialog.isShowing) {
-                            bar.progress = percent
-                            label.text = activity.getString(R.string.update_download_progress, percent)
-                        }
+    /** 后台下载中的进度框：可查看到哪了，也可直接取消；下载结束（成功/失败/取消）自动关掉 */
+    private fun showDownloadingDialog(
+        activity: AppCompatActivity,
+        state: UpdateManager.State.Downloading,
+    ) {
+        if (!activity.isAlive()) return
+        val dialog = MaterialAlertDialogBuilder(activity)
+            .setTitle(activity.getString(R.string.update_downloading_title, state.version))
+            .setMessage(activity.getString(R.string.update_downloading_message, state.percent))
+            .setPositiveButton(R.string.update_keep_downloading, null)
+            .setNegativeButton(R.string.update_cancel_download) { _, _ ->
+                UpdateManager.cancel()
+                if (activity.isAlive()) activity.toast(R.string.update_download_cancelled)
+            }
+            .create()
+
+        // 进度框开着的时候下载可能刚好结束：跟着状态刷新文案，并自动收起，
+        // 免得留下一个「已完成 45%」的旧框，还能点取消把刚下好的包作废
+        val watcher = activity.lifecycleScope.launch {
+            UpdateManager.state.collect { current ->
+                if (dialog.isShowing) {
+                    if (current is UpdateManager.State.Downloading &&
+                        current.version == state.version
+                    ) {
+                        dialog.setMessage(
+                            activity.getString(R.string.update_downloading_message, current.percent)
+                        )
+                    } else {
+                        dialog.dismiss()
                     }
-                }
-                SettingsRepository.downloadedUpdateVersion = release.version
-                if (dialog.isShowing) dialog.dismiss()
-                if (!activity.isAlive()) return@launch
-                install(activity, apk, release.version)
-            } catch (e: CancellationException) {
-                if (dialog.isShowing) dialog.dismiss()
-                throw e
-            } catch (e: Exception) {
-                if (dialog.isShowing) dialog.dismiss()
-                logError("下载更新失败", e)
-                if (activity.isAlive()) {
-                    val reason = e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
-                    activity.toast(activity.getString(R.string.update_download_failed, reason))
                 }
             }
         }
+        showTracked(activity, dialog, timeoutMs = null) { watcher.cancel() }
+    }
+
+    private fun reportFailure(activity: AppCompatActivity) {
+        val failed = UpdateManager.takeFailure() ?: return
+        activity.toast(activity.getString(R.string.update_download_failed, failed.reason))
+    }
+
+    /**
+     * 显示对话框，可选「无操作自动收起」。
+     *
+     * @param timeoutMs 非 null 时无操作到点自动收起（等同「稍后」）：
+     *                  电视经常开着没人按，提示框不该一直占屏、抢焦点。
+     *                  任意按键刷新计时；协程绑定页面生命周期，页面销毁自动取消。
+     * @param onDismiss 对话框关闭时额外要做的收尾（如停掉进度框的状态监听）
+     */
+    private fun showTracked(
+        activity: AppCompatActivity,
+        dialog: AlertDialog,
+        timeoutMs: Long?,
+        onDismiss: () -> Unit = {},
+    ) {
+        var lastInteractionMs = SystemClock.elapsedRealtime()
+        val timer = timeoutMs?.let { limit ->
+            activity.lifecycleScope.launch {
+                while (isActive && dialog.isShowing) {
+                    val remaining = limit - (SystemClock.elapsedRealtime() - lastInteractionMs)
+                    if (remaining <= 0) {
+                        dialog.dismiss()
+                        break
+                    }
+                    delay(remaining)
+                }
+            }
+        }
+        dialog.setOnKeyListener { _, _, _ ->
+            lastInteractionMs = SystemClock.elapsedRealtime()
+            false // 不消费按键，方向键 / 确认键照常操作对话框
+        }
+        dialog.setOnDismissListener {
+            timer?.cancel()
+            onDismiss()
+        }
+        dialog.show()
     }
 
     private fun install(activity: AppCompatActivity, apk: File, version: String) {

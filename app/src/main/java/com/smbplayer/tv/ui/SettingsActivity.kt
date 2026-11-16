@@ -9,7 +9,10 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.smbplayer.tv.R
 import com.smbplayer.tv.data.SettingsRepository
 import com.smbplayer.tv.databinding.ActivitySettingsBinding
+import com.smbplayer.tv.update.UpdateChecker
 import com.smbplayer.tv.update.UpdateFlow
+import com.smbplayer.tv.update.UpdateInstaller
+import com.smbplayer.tv.update.UpdateManager
 import com.smbplayer.tv.util.Changelog
 import com.smbplayer.tv.util.toast
 
@@ -46,12 +49,38 @@ class SettingsActivity : AppCompatActivity() {
         binding.rowTvHelp.setOnClickListener { showTvHelp() }
 
         // 检查更新（Android TV 没应用商店，更新入口只有这里和主页自动检查）
-        binding.tvUpdateVersion.text =
-            getString(R.string.settings_update_version, appVersion())
-        binding.rowCheckUpdate.setOnClickListener { UpdateFlow.check(this, manual = true) }
+        // 后台下载中显示百分比，已下好显示「点此安装」，否则显示当前版本
+        renderUpdateStatus(UpdateManager.state.value)
+        binding.rowCheckUpdate.setOnClickListener { UpdateFlow.manualCheck(this) }
+        // 订阅后台下载状态：进度随时刷新，下载完成的安装提示也在这里弹
+        UpdateFlow.attach(this) { renderUpdateStatus(it) }
 
         // 更新日志
         binding.rowChangelog.setOnClickListener { showChangelog() }
+    }
+
+    /** 「检查更新」那一行的说明文字 */
+    private fun renderUpdateStatus(state: UpdateManager.State) {
+        binding.tvUpdateVersion.text = when (state) {
+            is UpdateManager.State.Downloading ->
+                getString(R.string.settings_update_downloading, state.version, state.percent)
+            is UpdateManager.State.Ready ->
+                getString(R.string.settings_update_ready, state.version)
+            is UpdateManager.State.Failed ->
+                getString(R.string.settings_update_failed)
+            else -> {
+                // 上次会话下好但没装（换了进程，内存状态没了）：同样提示可直接安装
+                val cached = UpdateInstaller.downloadedApk(this)
+                val cachedVersion = SettingsRepository.downloadedUpdateVersion
+                if (cached != null && cachedVersion.isNotEmpty() &&
+                    UpdateChecker.isNewer(cachedVersion, appVersion)
+                ) {
+                    getString(R.string.settings_update_ready, cachedVersion)
+                } else {
+                    getString(R.string.settings_update_version, appVersion)
+                }
+            }
+        }
     }
 
     /** 字幕档位标签（顺序与 data/SubtitleSizes 的档位下标一致） */
@@ -96,7 +125,7 @@ class SettingsActivity : AppCompatActivity() {
         val view = LayoutInflater.from(this).inflate(R.layout.dialog_changelog, null)
         com.smbplayer.tv.databinding.DialogChangelogBinding.bind(view).tvText.text =
             Changelog.asText()
-        val version = appVersion()
+        val version = appVersion
         MaterialAlertDialogBuilder(this)
             .setTitle(
                 if (version.isEmpty()) {
@@ -110,10 +139,13 @@ class SettingsActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun appVersion(): String = runCatching {
-        @Suppress("DEPRECATION")
-        packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
-    }.getOrDefault("")
+    /** 当前版本号；缓存起来供「检查更新」行与更新日志标题复用 */
+    private val appVersion: String by lazy {
+        runCatching {
+            @Suppress("DEPRECATION")
+            packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
+        }.getOrDefault("")
+    }
 
     companion object {
         fun intent(context: Context): Intent = Intent(context, SettingsActivity::class.java)

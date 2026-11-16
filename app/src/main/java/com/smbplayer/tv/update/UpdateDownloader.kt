@@ -2,13 +2,16 @@ package com.smbplayer.tv.update
 
 import android.content.Context
 import com.smbplayer.tv.util.logInfo
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
+import kotlin.coroutines.coroutineContext
 
 /**
  * 更新包下载。
@@ -41,6 +44,9 @@ object UpdateDownloader {
     /**
      * 下载 [release] 的 APK：先直连，失败换镜像。
      *
+     * 协程可取消（用户点「取消下载」）：读循环里检查一次 active 状态，
+     * 取消后最多再读 64KB 就退出，不会傻乎乎把整包下完。
+     *
      * @param onProgress 0..100，在 IO 线程回调，UI 层自己切主线程
      * @return 下载完成的文件
      * @throws IOException 所有源都失败、包不完整或 sha256 对不上
@@ -55,6 +61,9 @@ object UpdateDownloader {
         for ((index, url) in urls.withIndex()) {
             try {
                 return@withContext downloadFrom(context, release, url, onProgress)
+            } catch (e: CancellationException) {
+                // 取消不是「这个源失败」，别再换镜像重试
+                throw e
             } catch (e: Exception) {
                 lastError = e
                 // 直连是 index 0，后面都是镜像；失败换下一个源，进度归零重来
@@ -73,7 +82,7 @@ object UpdateDownloader {
         return urls
     }
 
-    private fun downloadFrom(
+    private suspend fun downloadFrom(
         context: Context,
         release: UpdateChecker.Release,
         url: String,
@@ -106,6 +115,8 @@ object UpdateDownloader {
                 part.outputStream().use { output ->
                     val buffer = ByteArray(64 * 1024)
                     while (true) {
+                        // 用户取消 / 换源重下时尽快跳出阻塞读
+                        coroutineContext.ensureActive()
                         val n = input.read(buffer)
                         if (n < 0) break
                         output.write(buffer, 0, n)

@@ -17,6 +17,16 @@ object Changelog {
 
     val releases: List<ChangelogEntry> = listOf(
         ChangelogEntry(
+            version = "1.12-tv",
+            date = "2026-11-16",
+            lines = listOf(
+                "更新包改为后台下载：点「立即更新」后进度框立刻关闭，可以直接去播放视频，下载在应用后台继续跑",
+                "下载期间主页顶栏显示「更新下载 45%」；设置页「检查更新」可看进度，也能取消下载",
+                "下载完成且回到列表页时才弹「立即安装」，播放中不打扰；错过提示还能在设置页点「检查更新」安装",
+                "下载失败的提示只弹一次，不再每次回主页重复提示；进程重启时清理半截的 .part 文件",
+            ),
+        ),
+        ChangelogEntry(
             version = "1.11-tv",
             date = "2026-11-13",
             lines = listOf(

@@ -24,6 +24,7 @@ import com.smbplayer.tv.databinding.DialogServerEditBinding
 import com.smbplayer.tv.player.PlayerActivity
 import com.smbplayer.tv.smb.SmbGateway
 import com.smbplayer.tv.update.UpdateFlow
+import com.smbplayer.tv.update.UpdateManager
 import com.smbplayer.tv.util.SmbPath
 import com.smbplayer.tv.util.toast
 
@@ -115,22 +116,42 @@ class MainActivity : AppCompatActivity() {
         })
 
         // 工具栏只做标题展示（不放可聚焦按钮，避免焦点环）
-        binding.toolbar.subtitle = "v${appVersion()}"
+        binding.toolbar.subtitle = "v$appVersion"
+
+        // 订阅后台更新下载：顶栏显示进度，下载完成时弹安装提示（播放页不订阅，看片不被打断）
+        UpdateFlow.attach(this) { renderUpdateState(it) }
 
         refresh()
     }
 
-    /** 当前 APK 版本号（versionName），显示在工具栏副标题 */
-    private fun appVersion(): String = runCatching {
-        @Suppress("DEPRECATION")
-        packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
-    }.getOrDefault("")
+    /**
+     * 当前 APK 版本号（versionName），显示在工具栏副标题。
+     * 缓存起来：后台下载每变 1% 都会刷新副标题，不必每次都查 PackageManager。
+     */
+    private val appVersion: String by lazy {
+        runCatching {
+            @Suppress("DEPRECATION")
+            packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
+        }.getOrDefault("")
+    }
 
     override fun onResume() {
         super.onResume()
         refresh()
         // 电视上更新麻烦：回主页时静默看一眼 GitHub release（默认 6 小时一次，失败不打扰）
         UpdateFlow.autoCheck(this)
+    }
+
+    /** 顶栏副标题：平时只显示版本号，后台下载 / 已下好时补一段状态 */
+    private fun renderUpdateState(state: UpdateManager.State) {
+        val local = appVersion
+        binding.toolbar.subtitle = when (state) {
+            is UpdateManager.State.Downloading ->
+                getString(R.string.main_subtitle_downloading, local, state.percent)
+            is UpdateManager.State.Ready ->
+                getString(R.string.main_subtitle_ready, local, state.version)
+            else -> "v$local"
+        }
     }
 
     /**

@@ -30,6 +30,7 @@ import com.smbplayer.tv.smb.SmbEntry
 import com.smbplayer.tv.smb.SmbGateway
 import com.smbplayer.tv.smb.SmbSession
 import com.smbplayer.tv.smb.SmbShareLister
+import com.smbplayer.tv.update.UpdateFlow
 import com.smbplayer.tv.util.describe
 import com.smbplayer.tv.util.isAlive
 import com.smbplayer.tv.util.joinPath
@@ -214,6 +215,8 @@ class BrowseActivity : AppCompatActivity() {
                 else -> autoScanShares()
             }
         }
+        // 后台更新下载完成时在这里弹「立即安装」（播放页不订阅，看片不被打断）
+        UpdateFlow.attach(this)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

@@ -95,8 +95,10 @@ object UpdateInstaller {
 
         var removed = 0
         dir.listFiles()?.forEach { file ->
+            // 下载只活在应用进程里：进程重启后没人会接着写 .part，半截文件直接清掉
+            val partial = file.name.endsWith(".part")
             val stale = System.currentTimeMillis() - file.lastModified() > STALE_MS
-            if (updated || stale) {
+            if (partial || updated || stale) {
                 if (file.delete()) removed++
             }
         }
@@ -105,7 +107,7 @@ object UpdateInstaller {
             SettingsRepository.downloadedUpdateVersion = ""
             logInfo("已更新到 v$current，清理安装包 ${removed} 个")
         } else if (removed > 0) {
-            logInfo("清理过期安装包 ${removed} 个")
+            logInfo("清理残留/过期安装包 ${removed} 个")
         }
     }
 }
