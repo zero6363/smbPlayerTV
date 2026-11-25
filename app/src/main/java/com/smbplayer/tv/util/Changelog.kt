@@ -17,6 +17,15 @@ object Changelog {
 
     val releases: List<ChangelogEntry> = listOf(
         ChangelogEntry(
+            version = "1.13-tv",
+            date = "2026-11-25",
+            lines = listOf(
+                "修复小米电视（MIUI TV）等机型提示「没有应用安装权限」却无处可开：这类系统没有「安装未知应用」的按应用授权页，canRequestPackageInstalls 永远是 false",
+                "这类机型改为提示具体菜单路径（设置 → 账号与安全 → 安装未知来源的应用），并可直接点「直接安装」调起系统安装器",
+                "应用内新增「打开设置」入口；授权页可打开的机型，去设置开完权限返回后会自动继续安装，不用再点一次「检查更新」",
+            ),
+        ),
+        ChangelogEntry(
             version = "1.12-tv",
             date = "2026-11-16",
             lines = listOf(

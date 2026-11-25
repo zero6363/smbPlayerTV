@@ -50,6 +50,10 @@ object UpdateFlow {
 
     private var autoScheduled = false
 
+    /** 权限没开时暂存的待装包：从系统设置授权回来可以直接接着装 */
+    private var pendingApk: File? = null
+    private var pendingVersion: String = ""
+
     /** 主页 onResume 调用：节流后静默检查，失败不打扰用户 */
     fun autoCheck(activity: AppCompatActivity) {
         // 已经有下好的包在等安装：别再弹「发现新版本」压在安装提示上
@@ -82,6 +86,7 @@ object UpdateFlow {
                 UpdateManager.state.collect { state ->
                     if (activity.isAlive()) {
                         reportFailure(activity)
+                        resumePendingInstall(activity)
                         onState(state)
                         if (state is UpdateManager.State.Ready) showInstallPrompt(activity)
                     }
@@ -326,27 +331,86 @@ object UpdateFlow {
     }
 
     private fun install(activity: AppCompatActivity, apk: File, version: String) {
-        if (!UpdateInstaller.canInstall(activity)) {
-            // Android 8+ 必须在系统设置里允许「安装未知应用」，电视上没有别的入口
-            MaterialAlertDialogBuilder(activity)
-                .setTitle(R.string.update_permission_title)
-                .setMessage(
-                    activity.getString(
-                        R.string.update_permission_message,
-                        activity.getString(R.string.app_name),
-                    )
-                )
-                .setPositiveButton(R.string.update_permission_open) { _, _ ->
-                    UpdateInstaller.openInstallPermissionSettings(activity)
-                }
-                .setNegativeButton(R.string.server_cancel, null)
-                .show()
+        // 记下待装的包：用户去系统设置开权限、回来时自动接着装，不用再点一次「检查更新」
+        pendingApk = apk
+        pendingVersion = version
+        if (UpdateInstaller.canInstall(activity)) {
+            launchPendingInstall(activity)
             return
+        }
+        showPermissionDialog(activity)
+    }
+
+    /**
+     * 没有安装权限时的引导。
+     *
+     * 分两种机器：
+     * - 有「安装未知应用」按应用授权页（原生 Android TV / 大部分盒子）：引导去设置；
+     * - 没有该页面（小米电视等）：只有一个系统级开关，[UpdateInstaller.canInstall] 永远 false，
+     *   这时「去设置」会跳空，改成告诉用户具体菜单路径，并允许直接调安装器。
+     */
+    private fun showPermissionDialog(activity: AppCompatActivity) {
+        val hasPage = UpdateInstaller.hasUnknownSourcesSettings(activity)
+        val builder = MaterialAlertDialogBuilder(activity)
+            .setTitle(R.string.update_permission_title)
+            .setNegativeButton(R.string.server_cancel) { _, _ -> clearPendingInstall() }
+        if (hasPage) {
+            builder.setMessage(
+                activity.getString(
+                    R.string.update_permission_message,
+                    activity.getString(R.string.app_name),
+                )
+            )
+            builder.setPositiveButton(R.string.update_permission_open) { _, _ ->
+                if (!UpdateInstaller.openInstallPermissionSettings(activity)) {
+                    activity.toast(R.string.update_permission_not_found)
+                }
+            }
+        } else {
+            builder.setMessage(R.string.update_permission_message_tv)
+            builder.setPositiveButton(R.string.update_permission_try_install) { _, _ ->
+                launchPendingInstall(activity)
+            }
+            builder.setNeutralButton(R.string.update_permission_system_settings) { _, _ ->
+                if (!UpdateInstaller.openSystemSettings(activity)) {
+                    activity.toast(R.string.update_permission_not_found)
+                }
+            }
+        }
+        builder.show()
+    }
+
+    /** 调起系统安装器；调用后清掉待装信息，避免从设置页回来又弹一次 */
+    private fun launchPendingInstall(activity: AppCompatActivity): Boolean {
+        val apk = pendingApk ?: return false
+        val version = pendingVersion
+        clearPendingInstall()
+        if (!apk.isFile) {
+            activity.toast(R.string.update_install_failed)
+            return false
         }
         if (UpdateInstaller.install(activity, apk, version)) {
             activity.toast(R.string.update_installing)
-        } else {
-            activity.toast(R.string.update_install_failed)
+            return true
         }
+        activity.toast(R.string.update_install_failed)
+        return false
+    }
+
+    private fun clearPendingInstall() {
+        pendingApk = null
+        pendingVersion = ""
+    }
+
+    /** 从系统设置回来：权限已经打开就自动继续安装 */
+    private fun resumePendingInstall(activity: AppCompatActivity) {
+        if (pendingApk == null) return
+        if (UpdateInstaller.canInstall(activity)) {
+            logInfo("安装权限已打开，继续安装待装包")
+            launchPendingInstall(activity)
+            return
+        }
+        // 小米电视这类没有授权页的机器：刚从设置回来，再把「直接安装」递到手上
+        if (!UpdateInstaller.hasUnknownSourcesSettings(activity)) showPermissionDialog(activity)
     }
 }

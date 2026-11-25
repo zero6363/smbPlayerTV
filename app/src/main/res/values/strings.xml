@@ -174,8 +174,12 @@
     <string name="update_download_cancelled">已取消下载</string>
     <string name="update_download_failed">下载失败：%1$s</string>
     <string name="update_permission_title">需要允许安装应用</string>
-    <string name="update_permission_message">系统默认不允许「%1$s」自行安装更新。\n请在接下来的设置页里允许本应用安装应用，返回后再点一次「检查更新」即可继续（安装包已下载好，不会重复下载）。</string>
+    <string name="update_permission_message">系统不允许「%1$s」自行安装更新。\n请在接下来的设置页里允许「安装未知应用」，返回后会自动继续安装（安装包已下载好，不会重复下载）。</string>
+    <string name="update_permission_message_tv">当前系统没有「安装未知应用」的按应用授权页（小米电视等机型如此），只有一个系统级开关。\n请用遥控器打开：设置 → 账号与安全 → 安装未知来源的应用\n（新版系统：设置 → 隐私与安全 → 未知来源应用安装）\n打开后点「直接安装」；若仍被系统拦下，按电视上的提示再打开一次开关。</string>
     <string name="update_permission_open">去设置</string>
+    <string name="update_permission_try_install">直接安装</string>
+    <string name="update_permission_system_settings">打开设置</string>
+    <string name="update_permission_not_found">没找到系统的安装权限页，请手动到「设置 → 账号与安全」打开「安装未知来源的应用」</string>
     <string name="update_installing">已调起安装，请用遥控器确认</string>
     <string name="update_install_failed">无法调起安装器，请确认系统允许安装应用</string>
     <string name="settings_update_version">当前版本 v%1$s</string>

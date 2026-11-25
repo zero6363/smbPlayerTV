@@ -40,22 +40,79 @@ object UpdateInstaller {
     }
 
     /**
-     * Android 8.0 起装 APK 需要用户显式允许「安装未知应用」。
-     * 电视上这个开关藏在系统设置里，只能在首次更新时引导用户去打开。
+     * 当前是否已经允许本应用安装 APK。
+     *
+     * 注意：**不能把它当唯一判据**。小米电视（MIUI TV）根本没有「安装未知应用」的
+     * 按应用授权页，只有一个系统级开关（设置 → 账号与安全 → 安装未知来源的应用），
+     * 所以 canRequestPackageInstalls() 在小米电视上永远是 false，但直接调安装器照样能装。
+     * 调用方遇到 false 时要先看 [hasUnknownSourcesSettings]，没有该页面就直接尝试安装。
      */
     fun canInstall(context: Context): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
             context.packageManager.canRequestPackageInstalls()
 
-    /** 跳到本应用的「安装未知应用」授权页（部分老盒子没有该页面，静默失败） */
-    fun openInstallPermissionSettings(context: Context) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val intent = Intent(
+    /** 「安装未知应用」的按应用授权页（带包名 + 全局列表两种写法，后者老系统也能认） */
+    private fun unknownSourcesIntents(context: Context): List<Intent> = listOf(
+        Intent(
             Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
             Uri.parse("package:${context.packageName}"),
-        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        runCatching { context.startActivity(intent) }
-            .onFailure { logError("打开安装权限设置失败", it) }
+        ),
+        Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES),
+    )
+
+    /**
+     * 系统有没有「安装未知应用」授权页。
+     *
+     * 小米电视 / 部分国产 TV 没有这个页面（只有全局开关），返回 false，
+     * 此时弹「去设置」没有任何意义——直接调安装器才是对的。
+     */
+    fun hasUnknownSourcesSettings(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+        val pm = context.packageManager
+        return unknownSourcesIntents(context).any { intent ->
+            runCatching { intent.resolveActivity(pm) != null }.getOrDefault(false)
+        }
+    }
+
+    /**
+     * 跳到本应用的「安装未知应用」授权页。
+     *
+     * @return false 表示系统没有这个页面（小米电视常见），调用方应改为直接调起安装器
+     */
+    fun openInstallPermissionSettings(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+        for (intent in unknownSourcesIntents(context)) {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            val resolvable = runCatching {
+                intent.resolveActivity(context.packageManager) != null
+            }.getOrDefault(false)
+            if (!resolvable) continue
+            if (runCatching { context.startActivity(intent) }.isSuccess) {
+                logInfo("打开安装权限设置")
+                return true
+            }
+        }
+        return false
+    }
+
+    /**
+     * 打开系统设置首页（没有专用授权页时的兜底，让用户自己去「账号与安全」）。
+     * 小米电视的设置能响应 ACTION_SETTINGS，小米自家安全中心页则不一定。
+     */
+    fun openSystemSettings(context: Context): Boolean {
+        val intents = listOf(
+            Intent(Settings.ACTION_SECURITY_SETTINGS),
+            Intent(Settings.ACTION_SETTINGS),
+        )
+        for (intent in intents) {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (runCatching { context.startActivity(intent) }.isSuccess) {
+                logInfo("打开系统设置")
+                return true
+            }
+        }
+        logError("打开系统设置失败")
+        return false
     }
 
     /**
